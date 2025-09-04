@@ -1,10 +1,178 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Secure Cam</title>
+	<meta charset="UTF-8">
+	<title>P2P Security Cam</title>
+	<style>
+		body {
+			font-family: Arial, sans-serif;
+			margin: 2em;
+			background: #f0f0f0;
+		}
+		video {
+			width: 45%;
+			margin: 1em;
+			background: black;
+		}
+		#controls {
+			margin-bottom: 1em;
+		}
+		#controls input {
+			margin-right: 0.5em;
+		}
+		#status {
+			margin-top: 1em;
+			color: #555;
+		}
+	</style>
 </head>
 <body>
-  <h1>Secure Cam Viewer</h1>
-  <p>WebRTC connection logic coming soon.</p>
+	<h1>P2P Security Camera</h1>
+
+	<div id="controls">
+		<label>
+			Room ID:
+			<input type="text" id="roomId" placeholder="Enter room ID">
+		</label>
+		<label>
+			Password:
+			<input type="password" id="password" placeholder="Enter password">
+		</label>
+		<button id="createBtn">Create Room</button>
+		<button id="joinBtn">Join Room</button>
+		<button id="startCameraBtn" style="display:none;">Start Camera</button>
+	</div>
+
+	<video id="localVideo" autoplay muted playsinline></video>
+	<video id="remoteVideo" autoplay playsinline></video>
+
+	<div id="status"></div>
+
+	<script src="/socket.io/socket.io.js"></script>
+	<script>
+		const socket = io();
+		let localStream;
+		let peerConnection;
+		let role;
+		let roomId;
+		let password;
+
+		const createBtn = document.getElementById("createBtn");
+		const joinBtn = document.getElementById("joinBtn");
+		const startCameraBtn = document.getElementById("startCameraBtn");
+		const statusEl = document.getElementById("status");
+
+		createBtn.onclick = async () => {
+			roomId = document.getElementById("roomId").value.trim();
+			password = document.getElementById("password").value;
+
+			if (!roomId || !password) {
+				alert("Room ID and password are required");
+				return;
+			}
+
+			role = "host";
+			try {
+				const res = await fetch(`/create/${roomId}`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ password })
+				});
+				if (!res.ok) {
+					const err = await res.json();
+					alert("Room creation failed: " + err.error);
+					return;
+				}
+				startCameraBtn.style.display = "inline-block";
+				statusEl.textContent = `Room ${roomId} created. Start camera to begin streaming.`;
+			} catch (err) {
+				alert("Failed to create room: " + err.message);
+			}
+		};
+
+		joinBtn.onclick = async () => {
+			roomId = document.getElementById("roomId").value.trim();
+			password = document.getElementById("password").value;
+
+			if (!roomId || !password) {
+				alert("Room ID and password are required");
+				return;
+			}
+
+			role = "viewer";
+			setupConnection();
+			socket.emit("join", { roomId, password });
+		};
+
+		startCameraBtn.onclick = async () => {
+			await startCamera();
+			setupConnection();
+			socket.emit("join", { roomId, password });
+		};
+
+		async function startCamera() {
+			try {
+				localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+				document.getElementById("localVideo").srcObject = localStream;
+			} catch (err) {
+				alert("Failed to access camera: " + err.message);
+			}
+		}
+
+		function setupConnection() {
+			peerConnection = new RTCPeerConnection();
+
+			peerConnection.onicecandidate = (event) => {
+				if (event.candidate) {
+					socket.emit("signal", { roomId, data: { candidate: event.candidate } });
+				}
+			};
+
+			peerConnection.ontrack = (event) => {
+				document.getElementById("remoteVideo").srcObject = event.streams[0];
+			};
+
+			if (localStream) {
+				localStream.getTracks().forEach(track =>
+					peerConnection.addTrack(track, localStream)
+				);
+			}
+		}
+
+		socket.on("peer-joined", async (peerId) => {
+			if (role === "host") {
+				const offer = await peerConnection.createOffer();
+				await peerConnection.setLocalDescription(offer);
+				socket.emit("signal", { roomId, data: { sdp: offer }, target: peerId });
+			}
+		});
+
+		socket.on("signal", async ({ from, data }) => {
+			if (data.sdp) {
+				await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
+				if (data.sdp.type === "offer") {
+					const answer = await peerConnection.createAnswer();
+					await peerConnection.setLocalDescription(answer);
+					socket.emit("signal", { roomId, data: { sdp: answer }, target: from });
+				}
+			} else if (data.candidate) {
+				try {
+					await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+				} catch (err) {
+					console.error("Error adding received ICE candidate", err);
+				}
+			}
+		});
+
+		socket.on("peer-left", (peerId) => {
+			statusEl.textContent = `Peer ${peerId} left.`;
+			document.getElementById("remoteVideo").srcObject = null;
+		});
+
+		socket.on("error", (msg) => {
+			alert("Error: " + msg);
+			statusEl.textContent = "Error: " + msg;
+		});
+	</script>
 </body>
 </html>

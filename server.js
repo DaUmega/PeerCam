@@ -1,96 +1,151 @@
-import { WebSocketServer } from 'ws';
-import dotenv from 'dotenv';
-import bcrypt from 'bcrypt';
-import xss from 'xss';
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+const rateLimit = require("express-rate-limit");
+const bcrypt = require("bcrypt");
 
-dotenv.config();
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
 
-const MASTER_PASSWORD = process.env.MASTER_PASSWORD;
-if (!MASTER_PASSWORD) {
-  console.error('MASTER_PASSWORD missing in .env');
-  process.exit(1);
-}
+// In-memory store for rooms
+const rooms = {};
+const ROOM_TTL = 1000 * 60 * 30; // 30 min auto cleanup
+const MAX_CONNECTIONS_PER_IP = 3; // Prevent DDoS: max clients per IP per room
+const SALT_ROUNDS = 10; // bcrypt cost factor
 
-const PORT = 3000;
-const wss = new WebSocketServer({ port: PORT });
+// Global rate limiter: max 20 requests per IP per minute
+const globalLimiter = rateLimit({
+	windowMs: 60 * 1000,
+	max: 20,
+	message: "Too many requests from this IP, try again later."
+});
+app.use(globalLimiter);
 
-const rooms = {}; // { roomId: { passwordHash, clients: Set<WebSocket> } }
-
-wss.on('connection', (ws) => {
-  ws.on('message', async (message) => {
-    let data;
-    try {
-      data = JSON.parse(message.toString());
-    } catch {
-      return ws.send(JSON.stringify({ error: 'Invalid JSON' }));
-    }
-
-    const type = xss(data.type);
-    const roomId = xss(data.roomId || '');
-    const password = xss(data.password || '');
-    const role = xss(data.role || '');
-
-    // Sanitize all room IDs and passwords
-    if (!roomId.match(/^[a-zA-Z0-9_-]{3,32}$/)) {
-      return ws.send(JSON.stringify({ error: 'Invalid room ID format' }));
-    }
-
-    if (type === 'create') {
-      if (data.masterPassword !== MASTER_PASSWORD) {
-        return ws.send(JSON.stringify({ error: 'Invalid master password' }));
-      }
-
-      const hash = await bcrypt.hash(password, 10);
-      rooms[roomId] = { passwordHash: hash, clients: new Set() };
-      rooms[roomId].clients.add(ws);
-      ws.roomId = roomId;
-      return ws.send(JSON.stringify({ success: 'Room created' }));
-    }
-
-    if (type === 'join') {
-      const room = rooms[roomId];
-      if (!room) return ws.send(JSON.stringify({ error: 'Room not found' }));
-
-      const match = await bcrypt.compare(password, room.passwordHash);
-      if (!match) return ws.send(JSON.stringify({ error: 'Wrong password' }));
-
-      room.clients.add(ws);
-      ws.roomId = roomId;
-
-      // Inform existing clients
-      for (const client of room.clients) {
-        if (client !== ws && client.readyState === ws.OPEN) {
-          client.send(JSON.stringify({ type: 'new-peer' }));
-        }
-      }
-
-      return ws.send(JSON.stringify({ success: 'Joined room' }));
-    }
-
-    if (type === 'signal') {
-      const room = rooms[ws.roomId];
-      if (!room) return;
-
-      for (const client of room.clients) {
-        if (client !== ws && client.readyState === ws.OPEN) {
-          client.send(JSON.stringify({
-            type: 'signal',
-            signal: data.signal
-          }));
-        }
-      }
-    }
-  });
-
-  ws.on('close', () => {
-    const roomId = ws.roomId;
-    if (roomId && rooms[roomId]) {
-      rooms[roomId].clients.delete(ws);
-      if (rooms[roomId].clients.size === 0) {
-        delete rooms[roomId]; // Cleanup empty rooms
-      }
-    }
-  });
+// Specific limiter for creating rooms: max 1 per IP per minute
+const createLimiter = rateLimit({
+	windowMs: 60 * 1000,
+	max: 1,
+	message: "Too many create requests from this IP, try again later."
 });
 
-console.log(`Signaling server running on ws://localhost:${PORT}`);
+// Middleware for JSON parsing
+app.use(express.json());
+
+// Serve static files (index.html, etc.)
+app.use(express.static("public"));
+
+// Endpoint for creating a room
+app.post("/create/:roomId", createLimiter, async (req, res) => {
+	const { roomId } = req.params;
+	const { password } = req.body;
+
+	if (!password) {
+		return res.status(400).json({ error: "Password required" });
+	}
+	if (rooms[roomId]) {
+		return res.status(400).json({ error: "Room already exists" });
+	}
+
+	try {
+		const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+		rooms[roomId] = {
+			passwordHash,
+			clients: new Map(), // socketId -> IP
+			createdAt: Date.now(),
+			timeout: setTimeout(() => {
+				cleanupRoom(roomId);
+			}, ROOM_TTL)
+		};
+		return res.json({ success: true, roomId });
+	} catch (err) {
+		console.error("Hashing failed:", err);
+		return res.status(500).json({ error: "Internal error" });
+	}
+});
+
+// Cleanup helper
+function cleanupRoom(roomId) {
+	if (rooms[roomId]) {
+		clearTimeout(rooms[roomId].timeout);
+		delete rooms[roomId];
+		console.log(`Room ${roomId} cleaned up`);
+	}
+}
+
+// Socket.IO handling
+io.on("connection", (socket) => {
+	const ip = socket.handshake.address;
+	console.log(`New client connected from ${ip}`);
+
+	socket.on("join", async ({ roomId, password }) => {
+		const room = rooms[roomId];
+		if (!room) {
+			socket.emit("error", "Room not found");
+			return;
+		}
+
+		try {
+			const valid = await bcrypt.compare(password, room.passwordHash);
+			if (!valid) {
+				socket.emit("error", "Invalid password");
+				socket.disconnect();
+				return;
+			}
+		} catch (err) {
+			console.error("Password check failed:", err);
+			socket.emit("error", "Internal error");
+			socket.disconnect();
+			return;
+		}
+
+		// Enforce per-IP connection limit
+		const ipCount = Array.from(room.clients.values())
+			.filter(addr => addr === ip).length;
+
+		if (ipCount >= MAX_CONNECTIONS_PER_IP) {
+			socket.emit("error", "Too many connections from your IP in this room");
+			socket.disconnect();
+			return;
+		}
+
+		// Register client
+		room.clients.set(socket.id, ip);
+		socket.join(roomId);
+		socket.to(roomId).emit("peer-joined", socket.id);
+
+		// Refresh cleanup timer
+		clearTimeout(room.timeout);
+		room.timeout = setTimeout(() => {
+			cleanupRoom(roomId);
+		}, ROOM_TTL);
+	});
+
+	socket.on("signal", ({ roomId, data, target }) => {
+		if (!rooms[roomId]) return;
+		if (target) {
+			io.to(target).emit("signal", { from: socket.id, data });
+		} else {
+			socket.to(roomId).emit("signal", { from: socket.id, data });
+		}
+	});
+
+	socket.on("disconnect", () => {
+		console.log(`Client from ${ip} disconnected`);
+		for (const roomId in rooms) {
+			if (rooms[roomId].clients.has(socket.id)) {
+				rooms[roomId].clients.delete(socket.id);
+				socket.to(roomId).emit("peer-left", socket.id);
+				if (rooms[roomId].clients.size === 0) {
+					cleanupRoom(roomId);
+				}
+			}
+		}
+	});
+});
+
+// Start server
+const PORT = process.env.PORT || 8080;
+server.listen(PORT, () => {
+	console.log(`Server running on http://localhost:${PORT}`);
+});
