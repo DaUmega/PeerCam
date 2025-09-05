@@ -85,6 +85,7 @@ sudo systemctl reload apache2
 sudo systemctl restart apache2
 
 echo -e "${GREEN}[+] Obtaining SSL certificate with Certbot...${NC}"
+sudo pkill -9 certbot || true
 sudo certbot --apache -d $DOMAIN -m $EMAIL --agree-tos --non-interactive --redirect
 
 echo -e "${GREEN}[✓] Deployment finished!${NC}"
