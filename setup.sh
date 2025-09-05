@@ -23,6 +23,7 @@ fi
 echo -e "${GREEN}[+] Requesting certificates...${NC}"
 mkdir -p certs certs-data
 EMAIL=$(grep EMAIL .env | cut -d '=' -f2)
+DUCKDNS_DOMAIN=$(grep DUCKDNS_DOMAIN .env | cut -d '=' -f2)
 sudo certbot certonly --standalone -d "$DUCKDNS_DOMAIN" --non-interactive --agree-tos -m "$EMAIL"
 
 echo -e "${GREEN}[+] Copying certificates...${NC}"
