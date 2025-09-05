@@ -1,6 +1,4 @@
 #!/bin/bash
-# git clone https://github.com/DaUmega/PeerCam.git
-# cd PeerCam && chmod +x setup.sh && ./setup.sh
 set -e
 
 # Colors
@@ -11,29 +9,17 @@ echo -e "${GREEN}[+] Updating system...${NC}"
 sudo apt update && sudo apt upgrade -y
 
 echo -e "${GREEN}[+] Installing dependencies...${NC}"
-sudo apt install -y docker.io docker-compose certbot
+sudo apt install -y docker.io docker-compose
 
-echo -e "${GREEN}[+] Copying env file...${NC}"
+echo -e "${GREEN}[+] Copying .env file...${NC}"
 if [ ! -f .env ]; then
     cp .env.example .env
-    echo "⚠️  Edit .env with your DuckDNS domain + master password before continuing!"
+    echo -e "${GREEN}⚠️  Please edit .env with your DuckDNS domain and email before continuing.${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}[+] Requesting certificates...${NC}"
-mkdir -p certs certs-data
-EMAIL=$(grep EMAIL .env | cut -d '=' -f2)
-DUCKDNS_DOMAIN=$(grep DUCKDNS_DOMAIN .env | cut -d '=' -f2)
-# sudo cp /etc/resolv.conf /etc/resolv.conf.backup
-# sudo echo "nameserver 1.1.1.1" > /etc/resolv.conf
-sudo certbot certonly --standalone -d "$DUCKDNS_DOMAIN" --non-interactive --agree-tos -m "$EMAIL"
-# sudo mv /etc/resolv.conf.backup /etc/resolv.conf
-
-echo -e "${GREEN}[+] Copying certificates...${NC}"
-cp /etc/letsencrypt/live/$(grep DUCKDNS_DOMAIN .env | cut -d '=' -f2)/fullchain.pem certs/
-cp /etc/letsencrypt/live/$(grep DUCKDNS_DOMAIN .env | cut -d '=' -f2)/privkey.pem certs/
-
-echo -e "${GREEN}[+] Starting services with Docker Compose...${NC}"
+echo -e "${GREEN}[+] Starting Docker containers...${NC}"
 docker-compose up -d --build
 
-echo -e "${GREEN}[✓] Deployment finished! Visit: https://$(grep DUCKDNS_DOMAIN .env | cut -d '=' -f2) ${NC}"
+echo -e "${GREEN}[✓] Deployment finished!${NC}"
+echo -e "${GREEN}Your PeerCam app should be accessible at: https://$(grep DUCKDNS_DOMAIN .env | cut -d '=' -f2)${NC}"
