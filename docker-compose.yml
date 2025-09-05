@@ -35,19 +35,16 @@ services:
       - app
 
   certbot:
-    image: certbot/certbot
+    image: certbot/certbot:apache
     container_name: PeerCam_certbot
     restart: "no"
     env_file: .env
     volumes:
       - certs:/etc/letsencrypt
-      - ./apache.conf.template:/etc/apache2/sites-enabled/000-default.conf:ro
     entrypoint: >
       sh -c "
-      echo 'Waiting 10s for Apache to start...' && sleep 10 &&
-      certbot --apache --non-interactive --agree-tos --email $${EMAIL} -d $${DUCKDNS_DOMAIN} &&
-      echo 'Setting up cron for certificate renewal...' &&
-      (crontab -l 2>/dev/null; echo '0 0 * * * certbot renew --apache --quiet') | crontab -
+      echo 'Waiting 15s for Apache to start...' && sleep 15 &&
+      certbot --apache --non-interactive --agree-tos --email $${EMAIL} -d $${DUCKDNS_DOMAIN}
       "
     depends_on:
       - apache
