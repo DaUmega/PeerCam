@@ -8,6 +8,9 @@ echo -e "${GREEN}[+] Installing Docker and Docker Compose...${NC}"
 sudo apt update
 sudo apt install -y nodejs apache2
 
+echo -e "${GREEN}[+] Running npm install...${NC}"
+npm install
+
 echo -e "${GREEN}[+] Installing Certbot (Snap version)...${NC}"
 sudo snap install core
 sudo snap refresh core
@@ -67,6 +70,7 @@ sudo sed -i "s|#ServerName www.example.com|ServerName $DOMAIN|" $APACHE_CONF
 # Ensure proxy modules are enabled
 sudo a2enmod proxy proxy_http
 sudo systemctl reload apache2
+sudo systemctl restart apache2
 
 echo -e "${GREEN}[+] Obtaining SSL certificate with Certbot...${NC}"
 sudo certbot --apache -d $DOMAIN -m $EMAIL --agree-tos --non-interactive --redirect
