@@ -4,9 +4,9 @@ set -e
 GREEN='\033[0;32m'
 NC='\033[0m'
 
-echo -e "${GREEN}[+] Installing Docker and Docker Compose...${NC}"
+echo -e "${GREEN}[+] Installing npm, node, apache...${NC}"
 sudo apt update
-sudo apt install -y nodejs apache2
+sudo apt install -y npm nodejs apache2
 
 echo -e "${GREEN}[+] Running npm install...${NC}"
 npm install
