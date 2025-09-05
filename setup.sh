@@ -24,7 +24,10 @@ echo -e "${GREEN}[+] Requesting certificates...${NC}"
 mkdir -p certs certs-data
 EMAIL=$(grep EMAIL .env | cut -d '=' -f2)
 DUCKDNS_DOMAIN=$(grep DUCKDNS_DOMAIN .env | cut -d '=' -f2)
+sudo cp /etc/resolv.conf /etc/resolv.conf.backup
+echo "nameserver 1.1.1.1" | sudo tee /etc/resolv.conf
 sudo certbot certonly --standalone -d "$DUCKDNS_DOMAIN" --non-interactive --agree-tos -m "$EMAIL"
+sudo mv /etc/resolv.conf.backup /etc/resolv.conf
 
 echo -e "${GREEN}[+] Copying certificates...${NC}"
 cp /etc/letsencrypt/live/$(grep DUCKDNS_DOMAIN .env | cut -d '=' -f2)/fullchain.pem certs/
