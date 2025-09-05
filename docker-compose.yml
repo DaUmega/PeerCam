@@ -35,16 +35,17 @@ services:
       - app
 
   certbot:
-    image: certbot/certbot:apache
+    image: certbot/certbot
     container_name: PeerCam_certbot
     restart: "no"
     env_file: .env
     volumes:
       - certs:/etc/letsencrypt
+      - ./public:/var/www/certbot
     entrypoint: >
       sh -c "
       echo 'Waiting 15s for Apache to start...' && sleep 15 &&
-      certbot --apache --non-interactive --agree-tos --email $${EMAIL} -d $${DUCKDNS_DOMAIN}
+      certbot certonly --webroot --webroot-path /var/www/certbot -n --agree-tos --email $${EMAIL} -d $${DUCKDNS_DOMAIN}
       "
     depends_on:
       - apache
