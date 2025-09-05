@@ -18,7 +18,7 @@ if [ ! -f .env ]; then
 fi
 
 echo -e "${GREEN}[+] Starting Docker containers...${NC}"
-sudo docker-compose up -d --build
+DOCKER_BUILDKIT=1 && sudo docker-compose up -d --build
 
 echo -e "${GREEN}[✓] Deployment finished!${NC}"
 echo -e "${GREEN}Your PeerCam app should be accessible at: https://$(grep DUCKDNS_DOMAIN .env | cut -d '=' -f2)${NC}"

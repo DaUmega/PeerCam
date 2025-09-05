@@ -45,7 +45,7 @@ services:
     entrypoint: >
       sh -c "
       echo 'Waiting 10s for Apache to start...' && sleep 10 &&
-      sudo certbot --apache --non-interactive --agree-tos --email $${EMAIL} -d $${DUCKDNS_DOMAIN} &&
+      certbot --apache --non-interactive --agree-tos --email $${EMAIL} -d $${DUCKDNS_DOMAIN} &&
       echo 'Setting up cron for certificate renewal...' &&
       (crontab -l 2>/dev/null; echo '0 0 * * * certbot renew --apache --quiet') | crontab -
       "
