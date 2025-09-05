@@ -1,3 +1,4 @@
+// npm install express socket.io bcrypt express-rate-limit
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");

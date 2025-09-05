@@ -1,0 +1,30 @@
+version: "3.8"
+
+services:
+  app:
+    build: .
+    container_name: PeerCam
+    working_dir: /app
+    volumes:
+      - ./public:/app/public
+      - ./server.js:/app/server.js
+      - ./package.json:/app/package.json
+      - ./package-lock.json:/app/package-lock.json
+    command: sh -c "npm install && node server.js"
+    environment:
+      - NODE_ENV=production
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  apache:
+    image: httpd:2.4
+    container_name: PeerCam_apache
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./apache.conf:/usr/local/apache2/conf/httpd.conf:ro
+      - ./certs:/usr/local/apache2/certs
+      - ./certs-data:/data/letsencrypt

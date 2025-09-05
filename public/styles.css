@@ -1,0 +1,90 @@
+body {
+    font-family: Arial, sans-serif;
+    background: #f8fafc;
+    color: #111827;
+    margin: 0;
+    padding: 20px;
+    text-align: center;
+}
+
+h1 {
+    font-size: 1.8rem;
+    margin-bottom: 1.2rem;
+}
+
+#controls {
+    margin: 20px auto;
+    max-width: 400px;
+}
+
+#controls label {
+    display: block;
+    margin-bottom: 10px;
+    text-align: left;
+}
+
+#controls input {
+    width: 100%;
+    padding: 8px;
+    margin-top: 4px;
+    margin-bottom: 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 1rem;
+}
+
+button {
+    display: block;
+    width: 100%;
+    margin: 10px auto;
+    padding: 10px 15px;
+    font-size: 1rem;
+    font-weight: bold;
+    color: #fff;
+    background: #2563eb;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+button:hover {
+    background: #1d4ed8;
+}
+
+#status {
+    margin-top: 15px;
+    padding: 10px;
+    background: #e0f2fe;
+    color: #075985;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    display: inline-block;
+}
+
+.video-container {
+    margin-top: 20px;
+}
+
+.video-wrapper {
+    display: inline-block;
+    margin: 15px;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+video {
+    width: 640px;
+    height: 480px;
+    object-fit: cover;
+    display: none;
+    background: #000;
+    border-radius: 10px;
+}
+
+@media (max-width: 1080px) {
+    video {
+        width: 100%;
+    }
+}
