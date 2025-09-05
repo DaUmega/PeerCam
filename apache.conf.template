@@ -1,26 +1,16 @@
-ServerName ${DUCKDNS_DOMAIN}
+ServerName $DUCKDNS_DOMAIN
+DocumentRoot "/var/www/html"
 
-LoadModule mpm_event_module modules/mod_mpm_event.so
-LoadModule ssl_module modules/mod_ssl.so
-LoadModule proxy_module modules/mod_proxy.so
-LoadModule proxy_http_module modules/mod_proxy_http.so
-LoadModule rewrite_module modules/mod_rewrite.so
+Alias /.well-known/acme-challenge/ /var/www/certbot/.well-known/acme-challenge/
+<Directory "/var/www/certbot">
+    Options None
+    AllowOverride None
+    ForceType text/plain
+    Require all granted
+</Directory>
 
-<VirtualHost *:80>
-    ServerName ${DUCKDNS_DOMAIN}
-    RewriteEngine On
-    RewriteCond %{HTTPS} !=on
-    RewriteRule ^/?(.*) https://%{SERVER_NAME}/$1 [R,L]
-</VirtualHost>
-
-<VirtualHost *:443>
-    ServerName ${DUCKDNS_DOMAIN}
-
-    SSLEngine on
-    SSLCertificateFile /usr/local/apache2/certs/live/${DUCKDNS_DOMAIN}/fullchain.pem
-    SSLCertificateKeyFile /usr/local/apache2/certs/live/${DUCKDNS_DOMAIN}/privkey.pem
-
-    ProxyPreserveHost On
-    ProxyPass / http://app:8080/
-    ProxyPassReverse / http://app:8080/
-</VirtualHost>
+<Directory "/var/www/html">
+    Options Indexes FollowSymLinks
+    AllowOverride All
+    Require all granted
+</Directory>
