@@ -103,8 +103,13 @@ function setupConnection() {
         peerConnection.close();
         peerConnection = null;
     }
-    
-    peerConnection = new RTCPeerConnection();
+
+    peerConnection = new RTCPeerConnection({
+        iceServers: [
+            { urls: "stun:stun.l.google.com:19302" }
+        ],
+        sdpSemantics: "unified-plan" // Required for Safari
+    });
 
     peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
@@ -135,6 +140,8 @@ function setupSocketHandlers() {
 		}
 	});
 
+    let pendingCandidates = [];
+
     socket.on("signal", async ({ from, data }) => {
         if (!peerConnection) setupConnection();
 
@@ -145,11 +152,20 @@ function setupSocketHandlers() {
                 await peerConnection.setLocalDescription(answer);
                 socket.emit("signal", { roomId, data: { sdp: answer }, target: from });
             }
+
+            // Add queued candidates
+            pendingCandidates.forEach(c => peerConnection.addIceCandidate(new RTCIceCandidate(c)));
+            pendingCandidates = [];
         } else if (data.candidate) {
-            try {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-            } catch (err) {
-                console.error("Error adding received ICE candidate", err);
+            if (peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+                try {
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                } catch (err) {
+                    console.error("Error adding ICE candidate", err);
+                }
+            } else {
+                // Queue until remote description is set
+                pendingCandidates.push(data.candidate);
             }
         }
     });

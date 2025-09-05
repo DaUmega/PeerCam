@@ -12,7 +12,7 @@ const io = new Server(server);
 // In-memory store for rooms
 const rooms = {};
 const ROOM_TTL = 1000 * 60 * 30; // 30 min auto cleanup
-const MAX_CONNECTIONS_PER_IP = 3; // Prevent DDoS: max clients per IP per room
+const MAX_CONNECTIONS_PER_IP = 5; // Prevent DDoS: max clients per IP per room
 const SALT_ROUNDS = 10; // bcrypt cost factor
 
 // Global rate limiter: max 20 requests per IP per minute
