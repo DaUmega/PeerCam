@@ -8,10 +8,10 @@ GREEN='\033[0;32m'
 NC='\033[0m'
 
 echo -e "${GREEN}[+] Updating system...${NC}"
-apt update && apt upgrade -y
+sudo apt update && sudo apt upgrade -y
 
 echo -e "${GREEN}[+] Installing dependencies...${NC}"
-apt install -y docker.io docker-compose certbot
+sudo apt install -y docker.io docker-compose certbot
 
 echo -e "${GREEN}[+] Copying env file...${NC}"
 if [ ! -f .env ]; then
