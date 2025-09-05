@@ -74,6 +74,7 @@ async function startCamera() {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         localVideo.srcObject = localStream;
         localVideo.style.display = "block";
+        startCameraBtn.style.display = "none";
     } catch (err) {
         alert("Failed to access camera: " + err.message);
     }
@@ -84,15 +85,25 @@ function connectToRoom(roomId, password) {
         socket.disconnect();
     }
     socket = io();
-
     setupSocketHandlers();
 
     socket.on("connect", () => {
         socket.emit("join", { roomId, password });
+
+        // Lock UI after connecting
+        createBtn.style.display = "none";
+        joinBtn.style.display = "none";
+        document.getElementById("roomId").disabled = true;
+        document.getElementById("password").disabled = true;
     });
 }
 
 function setupConnection() {
+    if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+    }
+    
     peerConnection = new RTCPeerConnection();
 
     peerConnection.onicecandidate = (event) => {
@@ -146,13 +157,26 @@ function setupSocketHandlers() {
     socket.on("peer-left", (peerId) => {
 		statusEl.textContent = `Peer ${peerId} left.`;
 		remoteVideo.srcObject = null;
-		remoteVideo.style.display = "none";      // hide again
+		remoteVideo.style.display = "none";
 	});
 
     socket.on("error", (msg) => {
         statusEl.textContent = "Error: " + msg;
-        socket.disconnect();
-        socket = null;
+        if (socket) {
+            socket.disconnect();
+            socket = null;
+        }
+        // Reset UI
+        createBtn.style.display = "block";
+        joinBtn.style.display = "block";
+        document.getElementById("roomId").disabled = false;
+        document.getElementById("password").disabled = false;
+        copyUrlBtn.style.display = "none";
+        startCameraBtn.style.display = "none";
+        localVideo.srcObject = null;
+        remoteVideo.srcObject = null;
+        localVideo.style.display = "none";
+        remoteVideo.style.display = "none";
     });
 }
 

@@ -86,6 +86,12 @@ io.on("connection", (socket) => {
 			return;
 		}
 
+		// Prevent duplicate joins
+		if (room.clients.has(socket.id)) {
+			socket.emit("warning", "Already joined this room");
+			return;
+		}
+
 		try {
 			const valid = await bcrypt.compare(password, room.passwordHash);
 			if (!valid) {
@@ -123,8 +129,10 @@ io.on("connection", (socket) => {
 	});
 
 	socket.on("signal", ({ roomId, data, target }) => {
-		if (!rooms[roomId]) return;
-		if (target) {
+		const room = rooms[roomId];
+		if (!room || !room.clients.has(socket.id)) return; // not in room
+
+		if (target && room.clients.has(target)) {
 			io.to(target).emit("signal", { from: socket.id, data });
 		} else {
 			socket.to(roomId).emit("signal", { from: socket.id, data });
