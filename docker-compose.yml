@@ -18,9 +18,7 @@ services:
     restart: unless-stopped
 
   apache:
-    build:
-      context: .
-      dockerfile: Dockerfile.apache
+    image: httpd:latest
     container_name: PeerCam_apache
     restart: unless-stopped
     ports:
