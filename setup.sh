@@ -6,7 +6,13 @@ NC='\033[0m'
 
 echo -e "${GREEN}[+] Installing Docker and Docker Compose...${NC}"
 sudo apt update
-sudo apt install -y docker.io docker-compose
+sudo apt install -y nodejs apache2
+
+echo -e "${GREEN}[+] Installing Certbot (Snap version)...${NC}"
+sudo snap install core
+sudo snap refresh core
+sudo snap install --classic certbot
+sudo ln -sf /snap/bin/certbot /usr/bin/certbot
 
 echo -e "${GREEN}[+] Copying .env file...${NC}"
 if [ ! -f .env ]; then
@@ -15,11 +21,55 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
+# Load domain + email from .env
+DOMAIN=$(grep CUSTOM_DOMAIN .env | cut -d '=' -f2)
+EMAIL=$(grep EMAIL .env | cut -d '=' -f2)
+
+if [ -z "$DOMAIN" ] || [ -z "$EMAIL" ]; then
+    echo "❌ Please set CUSTOM_DOMAIN and EMAIL in your .env file."
+    exit 1
+fi
+
+echo -e "${GREEN}[+] Setting up firewall rules...${NC}"
 sudo iptables -C INPUT -p tcp --dport 80 -j ACCEPT || sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT
 sudo iptables -C INPUT -p tcp --dport 443 -j ACCEPT || sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT
 
-echo -e "${GREEN}[+] Starting Docker containers...${NC}"
-DOCKER_BUILDKIT=1 && sudo docker-compose up -d --build
+echo -e "${GREEN}[+] Creating systemd service for server.js...${NC}"
+SERVICE_FILE="/etc/systemd/system/peercam.service"
+
+sudo bash -c "cat > $SERVICE_FILE" <<EOL
+[Unit]
+Description=PeerCam Node.js App
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/node $(pwd)/server.js
+WorkingDirectory=$(pwd)
+EnvironmentFile=$(pwd)/.env
+Restart=always
+User=$USER
+Group=$USER
+
+[Install]
+WantedBy=multi-user.target
+EOL
+
+sudo systemctl daemon-reload
+sudo systemctl enable peercam
+sudo systemctl restart peercam
+
+echo -e "${GREEN}[+] Configuring Apache reverse proxy...${NC}"
+
+APACHE_CONF="/etc/apache2/sites-available/000-default.conf"
+sudo cp $APACHE_CONF ${APACHE_CONF}.bak
+sudo sed -i "s|#ServerName www.example.com|ServerName $DOMAIN|" $APACHE_CONF
+
+# Ensure proxy modules are enabled
+sudo a2enmod proxy proxy_http
+sudo systemctl reload apache2
+
+echo -e "${GREEN}[+] Obtaining SSL certificate with Certbot...${NC}"
+sudo certbot --apache -d $DOMAIN -m $EMAIL --agree-tos --non-interactive --redirect
 
 echo -e "${GREEN}[✓] Deployment finished!${NC}"
-echo -e "${GREEN}Your PeerCam app should be accessible at: https://$(grep DUCKDNS_DOMAIN .env | cut -d '=' -f2)${NC}"
+echo -e "${GREEN}Your PeerCam app should be accessible at: https://$DOMAIN${NC}"
