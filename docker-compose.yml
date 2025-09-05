@@ -38,7 +38,7 @@ services:
   certbot:
     image: certbot/certbot
     container_name: PeerCam_certbot
-    restart: "no"
+    restart: "unless-stopped"
     env_file: .env
     volumes:
       - certs:/etc/letsencrypt

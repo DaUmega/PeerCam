@@ -15,8 +15,8 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
-sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT
-sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT
+sudo iptables -C INPUT -p tcp --dport 80 -j ACCEPT || sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT
+sudo iptables -C INPUT -p tcp --dport 443 -j ACCEPT || sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT
 
 echo -e "${GREEN}[+] Starting Docker containers...${NC}"
 DOCKER_BUILDKIT=1 && sudo docker-compose up -d --build
