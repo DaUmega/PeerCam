@@ -25,12 +25,15 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
     env_file: .env
     volumes:
-      - ./apache.conf.template:/usr/local/apache2/conf/httpd.conf.template:ro
       - certs:/usr/local/apache2/certs
-      - ./public:/var/www/certbot  # Needed for webroot validation
-    command: sh -c "envsubst '\$DUCKDNS_DOMAIN' < /usr/local/apache2/conf/httpd.conf.template > /usr/local/apache2/conf/httpd.conf && httpd-foreground"
+      - ./public:/var/www/certbot
+    command: >
+      sh -c "cp /usr/local/apache2/conf/httpd.conf /tmp/httpd.conf &&
+             sed -i 's/^#ServerName .*/ServerName ${DUCKDNS_DOMAIN}/' /tmp/httpd.conf &&
+             httpd-foreground -f /tmp/httpd.conf"
     depends_on:
       - app
 
@@ -45,8 +48,7 @@ services:
     entrypoint: >
       sh -c "
       echo 'Waiting 15s for Apache to start...' && sleep 15 &&
-      certbot certonly --webroot --webroot-path /var/www/certbot -n --agree-tos --email $${EMAIL} -d $${DUCKDNS_DOMAIN} &&
-      echo 'Certbot done. Certificates created at /etc/letsencrypt/live' 
+      certbot certonly --webroot --webroot-path /var/www/certbot -n --agree-tos --email $${EMAIL} -d $${DUCKDNS_DOMAIN}
       "
     depends_on:
       - apache
