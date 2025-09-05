@@ -22,7 +22,8 @@ fi
 
 echo -e "${GREEN}[+] Requesting certificates...${NC}"
 mkdir -p certs certs-data
-sudo certbot certonly --standalone -d $(grep DUCKDNS_DOMAIN .env | cut -d '=' -f2) --non-interactive --agree-tos -m youremail@example.com
+EMAIL=$(grep EMAIL .env | cut -d '=' -f2)
+sudo certbot certonly --standalone -d "$DUCKDNS_DOMAIN" --non-interactive --agree-tos -m "$EMAIL"
 
 echo -e "${GREEN}[+] Copying certificates...${NC}"
 cp /etc/letsencrypt/live/$(grep DUCKDNS_DOMAIN .env | cut -d '=' -f2)/fullchain.pem certs/
