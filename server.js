@@ -82,7 +82,7 @@ io.on("connection", (socket) => {
 	socket.on("join", async ({ roomId, password }) => {
 		const room = rooms[roomId];
 		if (!room) {
-			socket.emit("error", "Room not found");
+			socket.emit("error", "Invalid room/password");
 			return;
 		}
 
@@ -95,7 +95,7 @@ io.on("connection", (socket) => {
 		try {
 			const valid = await bcrypt.compare(password, room.passwordHash);
 			if (!valid) {
-				socket.emit("error", "Invalid password");
+				socket.emit("error", "Invalid room/password");
 				socket.disconnect();
 				return;
 			}
