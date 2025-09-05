@@ -1,4 +1,6 @@
 #!/bin/bash
+# git clone https://github.com/DaUmega/PeerCam.git
+# cd PeerCam && chmod +x setup.sh && ./setup.sh
 set -e
 
 # Colors
@@ -10,12 +12,6 @@ apt update && apt upgrade -y
 
 echo -e "${GREEN}[+] Installing dependencies...${NC}"
 apt install -y docker.io docker-compose certbot
-
-echo -e "${GREEN}[+] Cloning repo...${NC}"
-if [ ! -d "webrtc-app" ]; then
-    git clone https://github.com/DaUmega/PeerCam.git
-fi
-cd PeerCam
 
 echo -e "${GREEN}[+] Copying env file...${NC}"
 if [ ! -f .env ]; then
