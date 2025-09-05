@@ -62,10 +62,22 @@ sudo systemctl enable peercam
 sudo systemctl restart peercam
 
 echo -e "${GREEN}[+] Configuring Apache reverse proxy...${NC}"
-
 APACHE_CONF="/etc/apache2/sites-available/000-default.conf"
+
 sudo cp $APACHE_CONF ${APACHE_CONF}.bak
-sudo sed -i "s|#ServerName www.example.com|ServerName $DOMAIN|" $APACHE_CONF
+
+sudo bash -c "cat > $APACHE_CONF" <<EOL
+<VirtualHost *:80>
+    ServerName $DOMAIN
+
+    ProxyPreserveHost On
+    ProxyPass / http://127.0.0.1:8080/
+    ProxyPassReverse / http://127.0.0.1:8080/
+
+    ErrorLog \${APACHE_LOG_DIR}/peercam_error.log
+    CustomLog \${APACHE_LOG_DIR}/peercam_access.log combined
+</VirtualHost>
+EOL
 
 # Ensure proxy modules are enabled
 sudo a2enmod proxy proxy_http
