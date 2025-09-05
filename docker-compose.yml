@@ -44,6 +44,8 @@ services:
       - ./public:/var/www/certbot
     entrypoint: >
       sh -c "
+      echo 'nameserver 1.1.1.1' > /etc/resolv.conf &&
+      echo 'nameserver 8.8.8.8' >> /etc/resolv.conf &&
       echo 'Waiting 15s for Apache to start...' && sleep 15 &&
       certbot certonly --webroot --webroot-path /var/www/certbot -n --agree-tos --email $${EMAIL} -d $${DUCKDNS_DOMAIN}
       "
