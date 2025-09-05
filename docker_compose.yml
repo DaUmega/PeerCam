@@ -18,13 +18,37 @@ services:
     restart: unless-stopped
 
   apache:
-    image: httpd:2.4
+    image: httpd:latest
     container_name: PeerCam_apache
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
+    env_file: .env
     volumes:
-      - ./apache.conf:/usr/local/apache2/conf/httpd.conf:ro
-      - ./certs:/usr/local/apache2/certs
-      - ./certs-data:/data/letsencrypt
+      - ./apache.conf.template:/usr/local/apache2/conf/httpd.conf.template:ro
+      - certs:/usr/local/apache2/certs
+    command: sh -c "envsubst '\$DUCKDNS_DOMAIN' < /usr/local/apache2/conf/httpd.conf.template > /usr/local/apache2/conf/httpd.conf && httpd-foreground"
+    depends_on:
+      - app
+
+  certbot:
+    image: certbot/certbot
+    container_name: PeerCam_certbot
+    restart: "no"
+    env_file: .env
+    volumes:
+      - certs:/etc/letsencrypt
+      - ./apache.conf.template:/etc/apache2/sites-enabled/000-default.conf:ro
+    entrypoint: >
+      sh -c "
+      echo 'Waiting 10s for Apache to start...' && sleep 10 &&
+      certbot --apache --non-interactive --agree-tos --email $${EMAIL} -d $${DUCKDNS_DOMAIN} &&
+      echo 'Setting up cron for certificate renewal...' &&
+      (crontab -l 2>/dev/null; echo '0 0 * * * certbot renew --apache --quiet') | crontab -
+      "
+    depends_on:
+      - apache
+
+volumes:
+  certs:

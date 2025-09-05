@@ -3,6 +3,7 @@ ServerName ${DUCKDNS_DOMAIN}
 LoadModule ssl_module modules/mod_ssl.so
 LoadModule proxy_module modules/mod_proxy.so
 LoadModule proxy_http_module modules/mod_proxy_http.so
+LoadModule rewrite_module modules/mod_rewrite.so
 
 <VirtualHost *:80>
     ServerName ${DUCKDNS_DOMAIN}
@@ -15,8 +16,8 @@ LoadModule proxy_http_module modules/mod_proxy_http.so
     ServerName ${DUCKDNS_DOMAIN}
 
     SSLEngine on
-    SSLCertificateFile /usr/local/apache2/certs/fullchain.pem
-    SSLCertificateKeyFile /usr/local/apache2/certs/privkey.pem
+    SSLCertificateFile /usr/local/apache2/certs/live/${DUCKDNS_DOMAIN}/fullchain.pem
+    SSLCertificateKeyFile /usr/local/apache2/certs/live/${DUCKDNS_DOMAIN}/privkey.pem
 
     ProxyPreserveHost On
     ProxyPass / http://app:8080/
