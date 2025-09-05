@@ -1,14 +1,13 @@
 #!/bin/bash
 set -e
 
-# Colors
 GREEN='\033[0;32m'
 NC='\033[0m'
 
 echo -e "${GREEN}[+] Updating system...${NC}"
 sudo apt update && sudo apt upgrade -y
 
-echo -e "${GREEN}[+] Installing dependencies...${NC}"
+echo -e "${GREEN}[+] Installing Docker and Docker Compose...${NC}"
 sudo apt install -y docker.io docker-compose
 
 echo -e "${GREEN}[+] Copying .env file...${NC}"

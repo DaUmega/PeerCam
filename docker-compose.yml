@@ -10,7 +10,7 @@ services:
       - ./server.js:/app/server.js
       - ./package.json:/app/package.json
       - ./package-lock.json:/app/package-lock.json
-    command: sh -c "npm install && node server.js"
+    command: ["node", "server.js"]
     environment:
       - NODE_ENV=production
     expose:
