@@ -1,13 +1,13 @@
 # PeerCam
 
-PeerCam is a **peer-to-peer, encrypted camera web app** that allows users to set up a webcam as a live-streaming security camera. Stream securely to other users without storing video on a server, ensuring privacy and real-time access.
+PeerCam is a **peer-to-peer, encrypted camera web app** that allows users to set up a webcam as a live-streaming camera. Stream securely to other users without storing video on a server, ensuring privacy and real-time access.
 
 ---
 
 ## Features
 
 - **P2P live streaming**: Connect directly between devices without uploading video to a central server.  
-- **Encrypted communication**: Password-protected rooms with end-to-end security.  
+- **Encrypted communication**: Password(hashed)-protected rooms with end-to-end security.  
 - **Cross-platform support**: Works on desktop browsers, Android, and iOS (Safari).  
 - **Multi-viewer support**: Hosts can stream to multiple viewers simultaneously.  
 - **No storage required**: Streams are temporary and can run indefinitely without saving to disk.  
