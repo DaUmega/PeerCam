@@ -146,7 +146,11 @@ io.on("connection", (socket) => {
 				rooms[roomId].clients.delete(socket.id);
 				socket.to(roomId).emit("peer-left", socket.id);
 				if (rooms[roomId].clients.size === 0) {
-					cleanupRoom(roomId);
+					setTimeout(() => {
+						if (rooms[roomId] && rooms[roomId].clients.size === 0) {
+							cleanupRoom(roomId);
+						}
+					}, 2 * 60 * 1000); // 2-minutes grace period for reconnect
 				}
 			}
 		}

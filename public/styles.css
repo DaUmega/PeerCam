@@ -83,6 +83,17 @@ video {
     border-radius: 10px;
 }
 
+video:fullscreen,
+video:-webkit-full-screen,
+video:-moz-full-screen,
+video:-ms-fullscreen {
+    width: 100vw !important;
+    height: 100vh !important;
+    object-fit: contain !important;
+    background: #000 !important;
+    border-radius: 0 !important;
+}
+
 @media (max-width: 1080px) {
     video {
         width: 100%;

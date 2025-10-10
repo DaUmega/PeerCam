@@ -5,6 +5,10 @@ let role = null;
 let roomId = null;
 let password = null;
 
+let reconnectInterval = null;
+let reconnectAttempts = 0;
+let authFailed = false;
+
 const peerConnections = {}; // peerId -> RTCPeerConnection
 const pendingCandidates = {}; // peerId -> ICE candidate queue
 
@@ -43,11 +47,9 @@ createBtn.onclick = async () => {
 
 		copyUrlBtn.onclick = () => {
 			const url = `${window.location.origin}?room=${encodeURIComponent(roomId)}`;
-			navigator.clipboard.writeText(url).then(() => {
-				alert("Room URL copied to clipboard:\n" + url);
-			}).catch(err => {
-				alert("Failed to copy URL: " + err);
-			});
+			navigator.clipboard.writeText(url)
+				.then(() => alert("Room URL copied to clipboard:\n" + url))
+				.catch(err => alert("Failed to copy URL: " + err));
 		};
 	} catch (err) {
 		alert("Failed to create room: " + err.message);
@@ -64,6 +66,7 @@ joinBtn.onclick = () => {
 	}
 
 	role = "viewer";
+	authFailed = false; // reset before connecting
 	connectToRoom(roomId, password);
 };
 
@@ -84,29 +87,33 @@ async function startCamera() {
 }
 
 function connectToRoom(roomId, password) {
-	if (socket && socket.connected) {
-		socket.disconnect();
-	}
+	if (socket && socket.connected) socket.disconnect();
 	socket = io();
 	setupSocketHandlers();
 
 	socket.on("connect", () => {
-		socket.emit("join", { roomId, password });
-
-		// Lock UI after connecting
-		createBtn.style.display = "none";
-		joinBtn.style.display = "none";
-		document.getElementById("roomId").disabled = true;
-		document.getElementById("password").disabled = true;
-	});
+        socket.emit("join", { roomId, password });
+        createBtn.style.display = "none";
+        joinBtn.style.display = "none";
+        document.getElementById("roomId").disabled = true;
+        document.getElementById("password").disabled = true;
+        statusEl.textContent = "";
+    });
 }
 
 function setupConnection() {
-	const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }], sdpSemantics: "unified-plan" });
+	const pc = new RTCPeerConnection({
+		iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+		sdpSemantics: "unified-plan"
+	});
 
 	pc.onicecandidate = (event) => {
 		if (event.candidate) {
-			socket.emit("signal", { roomId, data: { candidate: event.candidate }, target: Object.keys(peerConnections).find(k => peerConnections[k] === pc) });
+			socket.emit("signal", {
+				roomId,
+				data: { candidate: event.candidate },
+				target: Object.keys(peerConnections).find(k => peerConnections[k] === pc)
+			});
 		}
 	};
 
@@ -119,6 +126,18 @@ function setupConnection() {
 		localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 	}
 
+	// 🧠 Advanced connection monitoring
+	pc.onconnectionstatechange = () => {
+		const state = pc.connectionState;
+		console.log("Peer connection state:", state);
+		if (state === "disconnected" || state === "failed" || state === "closed") {
+			statusEl.textContent = "Connection lost. Attempting to reconnect...";
+			if (role === "viewer" && !authFailed) {
+				handleHostDisconnected();
+			}
+		}
+	};
+
 	return pc;
 }
 
@@ -126,19 +145,14 @@ function setupSocketHandlers() {
 	socket.on("peer-joined", async (peerId) => {
 		statusEl.textContent = `Peer ${peerId} joined.`;
 
-		// Only host initiates
 		if (role === "host") {
 			const pc = setupConnection();
 			peerConnections[peerId] = pc;
-
 			const offer = await pc.createOffer();
 			await pc.setLocalDescription(offer);
-
 			socket.emit("signal", { roomId, data: { sdp: offer }, target: peerId });
 		}
 	});
-
-	let pendingCandidates = [];
 
 	socket.on("signal", async ({ from, data }) => {
 		let pc = peerConnections[from];
@@ -149,14 +163,12 @@ function setupSocketHandlers() {
 
 		if (data.sdp) {
 			await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-
 			if (data.sdp.type === "offer") {
 				const answer = await pc.createAnswer();
 				await pc.setLocalDescription(answer);
 				socket.emit("signal", { roomId, data: { sdp: answer }, target: from });
 			}
 
-			// Add queued candidates
 			pendingCandidates[from]?.forEach(c => pc.addIceCandidate(new RTCIceCandidate(c)));
 			pendingCandidates[from] = [];
 		} else if (data.candidate) {
@@ -178,46 +190,77 @@ function setupSocketHandlers() {
 	});
 
 	socket.on("error", (msg) => {
+		console.warn("Server error:", msg);
 		statusEl.textContent = "Error: " + msg;
-		if (socket) {
-			socket.disconnect();
-			socket = null;
+
+		// Detect password issue
+		if (msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("password")) {
+			authFailed = true; // 🚨 stop reconnect attempts
 		}
-		// Reset UI
-		createBtn.style.display = "block";
-		joinBtn.style.display = "block";
-		document.getElementById("roomId").disabled = false;
-		document.getElementById("password").disabled = false;
-		copyUrlBtn.style.display = "none";
-		startCameraBtn.style.display = "none";
-		localVideo.srcObject = null;
-		remoteVideo.srcObject = null;
-		localVideo.style.display = "none";
-		remoteVideo.style.display = "none";
+
+		cleanupAndResetUI();
 	});
+}
+
+function handleHostDisconnected() {
+	if (reconnectInterval || authFailed) return; // don't loop twice or retry if auth failed
+	reconnectAttempts = 0;
+	statusEl.textContent = "Host disconnected. Waiting to reconnect...";
+
+	reconnectInterval = setInterval(() => {
+		if (authFailed) {
+			clearInterval(reconnectInterval);
+			reconnectInterval = null;
+			return;
+		}
+		if (reconnectAttempts >= 12) { // 2 minutes total (10s interval)
+			clearInterval(reconnectInterval);
+			reconnectInterval = null;
+			statusEl.textContent = "Host did not reconnect within 2 minutes.";
+			return;
+		}
+		reconnectAttempts++;
+		console.log(`Reconnect attempt ${reconnectAttempts}`);
+		socket.emit("join", { roomId, password });
+	}, 10000);
+}
+
+function cleanupAndResetUI() {
+	if (reconnectInterval) {
+		clearInterval(reconnectInterval);
+		reconnectInterval = null;
+	}
+	if (socket) {
+		socket.disconnect();
+		socket = null;
+	}
+	Object.values(peerConnections).forEach(pc => pc.close());
+	for (const k in peerConnections) delete peerConnections[k];
+	localVideo.srcObject = null;
+	remoteVideo.srcObject = null;
+	localVideo.style.display = "none";
+	remoteVideo.style.display = "none";
+	startCameraBtn.style.display = "none";
+	copyUrlBtn.style.display = "none";
+	createBtn.style.display = "block";
+	joinBtn.style.display = "block";
+	document.getElementById("roomId").disabled = false;
+	document.getElementById("password").disabled = false;
 }
 
 function enableFullscreenOnClick(videoElement) {
 	videoElement.addEventListener("click", () => {
-		if (videoElement.requestFullscreen) {
-			videoElement.requestFullscreen();
-		} else if (videoElement.webkitRequestFullscreen) { // Safari
-			videoElement.webkitRequestFullscreen();
-		} else if (videoElement.msRequestFullscreen) { // IE/Edge
-			videoElement.msRequestFullscreen();
-		}
+		if (videoElement.requestFullscreen) videoElement.requestFullscreen();
+		else if (videoElement.webkitRequestFullscreen) videoElement.webkitRequestFullscreen();
+		else if (videoElement.msRequestFullscreen) videoElement.msRequestFullscreen();
 	});
 }
 
-// Enable fullscreen toggle
 enableFullscreenOnClick(localVideo);
 enableFullscreenOnClick(remoteVideo);
 
-// Auto-fill room ID if ?room= param exists in URL
 window.addEventListener("DOMContentLoaded", () => {
 	const params = new URLSearchParams(window.location.search);
 	const prefillRoom = params.get("room");
-	if (prefillRoom) {
-		document.getElementById("roomId").value = prefillRoom;
-	}
+	if (prefillRoom) document.getElementById("roomId").value = prefillRoom;
 });
