@@ -17,17 +17,25 @@ const SALT_ROUNDS = 10; // bcrypt cost factor
 
 // Global rate limiter: max 20 requests per IP per minute
 const globalLimiter = rateLimit({
-	windowMs: 60 * 1000,
-	max: 20,
-	message: "Too many requests from this IP, try again later."
+    windowMs: 60 * 1000,
+    max: 20,
+    handler: (req, res) => {
+        const msg = "Too many requests from this IP, try again later.";
+        if (req.accepts && req.accepts("json")) return res.status(429).json({ error: msg });
+        return res.status(429).type("text").send(msg);
+    }
 });
 app.use(globalLimiter);
 
 // Specific limiter for creating rooms: max 1 per IP per minute
 const createLimiter = rateLimit({
-	windowMs: 60 * 1000,
-	max: 1,
-	message: "Too many create requests from this IP, try again later."
+    windowMs: 60 * 1000,
+    max: 1,
+    handler: (req, res) => {
+        const msg = "Too many create requests from this IP, try again later.";
+        if (req.accepts && req.accepts("json")) return res.status(429).json({ error: msg });
+        return res.status(429).type("text").send(msg);
+    }
 });
 
 // Middleware for JSON parsing
@@ -38,31 +46,39 @@ app.use(express.static("public"));
 
 // Endpoint for creating a room
 app.post("/create/:roomId", createLimiter, async (req, res) => {
-	const { roomId } = req.params;
-	const { password } = req.body;
+    const { roomId } = req.params;
+    const { password } = req.body;
 
-	if (!password) {
-		return res.status(400).json({ error: "Password required" });
-	}
-	if (rooms[roomId]) {
-		return res.status(400).json({ error: "Room already exists" });
-	}
+    if (!password) {
+        return res.status(400).json({ error: "Password required" });
+    }
+    if (rooms[roomId]) {
+        // allow recreation if the room exists but is empty (clients.size === 0)
+        const existing = rooms[roomId];
+        if (existing.clients && existing.clients.size === 0) {
+            clearTimeout(existing.timeout);
+            delete rooms[roomId];
+            // fall through to create new room
+        } else {
+            return res.status(400).json({ error: "Room already exists" });
+        }
+    }
 
-	try {
-		const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-		rooms[roomId] = {
-			passwordHash,
-			clients: new Map(), // socketId -> IP
-			createdAt: Date.now(),
-			timeout: setTimeout(() => {
-				cleanupRoom(roomId);
-			}, ROOM_TTL)
-		};
-		return res.json({ success: true, roomId });
-	} catch (err) {
-		console.error("Hashing failed:", err);
-		return res.status(500).json({ error: "Internal error" });
-	}
+    try {
+        const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+        rooms[roomId] = {
+            passwordHash,
+            clients: new Map(), // socketId -> IP
+            createdAt: Date.now(),
+            timeout: setTimeout(() => {
+                cleanupRoom(roomId);
+            }, ROOM_TTL)
+        };
+        return res.json({ success: true, roomId });
+    } catch (err) {
+        console.error("Hashing failed:", err);
+        return res.status(500).json({ error: "Internal error" });
+    }
 });
 
 // Cleanup helper
@@ -76,59 +92,75 @@ function cleanupRoom(roomId) {
 
 // Socket.IO handling
 io.on("connection", (socket) => {
-	const ip = socket.handshake.address;
-	console.log(`New client connected from ${ip}`);
+    const ip = socket.handshake.address;
+    console.log(`New client connected from ${ip}`);
 
-	socket.on("join", async ({ roomId, password }) => {
-		const room = rooms[roomId];
-		if (!room) {
-			socket.emit("error", "Invalid room/password");
-			return;
-		}
+    socket.on("join", async ({ roomId, password } = {}, callback) => {
+        // support optional callback ack
+        const ack = typeof callback === "function" ? callback : null;
 
-		// Prevent duplicate joins
-		if (room.clients.has(socket.id)) {
-			socket.emit("warning", "Already joined this room");
-			return;
-		}
+        const room = rooms[roomId];
+        if (!room) {
+            const errMsg = "Invalid room/password";
+            if (ack) ack({ ok: false, error: errMsg });
+            socket.emit("server-error", errMsg);
+            return;
+        }
 
-		try {
-			const valid = await bcrypt.compare(password, room.passwordHash);
-			if (!valid) {
-				socket.emit("error", "Invalid room/password");
-				socket.disconnect();
-				return;
-			}
-		} catch (err) {
-			console.error("Password check failed:", err);
-			socket.emit("error", "Internal error");
-			socket.disconnect();
-			return;
-		}
+        // Prevent duplicate joins
+        if (room.clients.has(socket.id)) {
+            const warn = "Already joined this room";
+            if (ack) ack({ ok: false, error: warn });
+            socket.emit("warning", warn);
+            return;
+        }
 
-		// Enforce per-IP connection limit
-		const ipCount = Array.from(room.clients.values())
-			.filter(addr => addr === ip).length;
+        try {
+            const valid = await bcrypt.compare(password, room.passwordHash);
+            if (!valid) {
+                const errMsg = "Invalid room/password";
+                if (ack) ack({ ok: false, error: errMsg });
+                socket.emit("server-error", errMsg);
+                // disconnect after sending ack/event
+                socket.disconnect(true);
+                return;
+            }
+        } catch (err) {
+            console.error("Password check failed:", err);
+            const errMsg = "Internal error";
+            if (ack) ack({ ok: false, error: errMsg });
+            socket.emit("server-error", errMsg);
+            socket.disconnect(true);
+            return;
+        }
 
-		if (ipCount >= MAX_CONNECTIONS_PER_IP) {
-			socket.emit("error", "Too many connections from your IP in this room");
-			socket.disconnect();
-			return;
-		}
+        // Enforce per-IP connection limit
+        const ipCount = Array.from(room.clients.values())
+            .filter(addr => addr === ip).length;
 
-		// Register client
-		room.clients.set(socket.id, ip);
-		socket.join(roomId);
-		socket.to(roomId).emit("peer-joined", socket.id);
+        if (ipCount >= MAX_CONNECTIONS_PER_IP) {
+            const errMsg = "Too many connections from your IP in this room";
+            if (ack) ack({ ok: false, error: errMsg });
+            socket.emit("server-error", errMsg);
+            socket.disconnect(true);
+            return;
+        }
 
-		// Refresh cleanup timer
-		clearTimeout(room.timeout);
-		room.timeout = setTimeout(() => {
-			cleanupRoom(roomId);
-		}, ROOM_TTL);
-	});
+        // Register client
+        room.clients.set(socket.id, ip);
+        socket.join(roomId);
+        socket.to(roomId).emit("peer-joined", socket.id);
 
-	socket.on("signal", ({ roomId, data, target }) => {
+        // Refresh cleanup timer
+        clearTimeout(room.timeout);
+        room.timeout = setTimeout(() => {
+            cleanupRoom(roomId);
+        }, ROOM_TTL);
+
+        if (ack) ack({ ok: true, roomId });
+    });
+
+    socket.on("signal", ({ roomId, data, target }) => {
 		const room = rooms[roomId];
 		if (!room || !room.clients.has(socket.id)) return; // not in room
 
@@ -139,7 +171,7 @@ io.on("connection", (socket) => {
 		}
 	});
 
-	socket.on("disconnect", () => {
+    socket.on("disconnect", () => {
 		console.log(`Client from ${ip} disconnected`);
 		for (const roomId in rooms) {
 			if (rooms[roomId].clients.has(socket.id)) {

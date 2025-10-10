@@ -21,39 +21,55 @@ const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
 
 createBtn.onclick = async () => {
-	roomId = document.getElementById("roomId").value.trim();
-	password = document.getElementById("password").value;
+    roomId = document.getElementById("roomId").value.trim();
+    password = document.getElementById("password").value;
 
-	if (!roomId || !password) {
-		alert("Room ID and password are required");
-		return;
-	}
+    if (!roomId || !password) {
+        alert("Room ID and password are required");
+        return;
+    }
 
-	role = "host";
-	try {
-		const res = await fetch(`/create/${roomId}`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ password })
-		});
-		if (!res.ok) {
-			const err = await res.json();
-			alert("Room creation failed: " + err.error);
-			return;
-		}
-		startCameraBtn.style.display = "block";
-		copyUrlBtn.style.display = "block";
-		statusEl.textContent = `Room ${roomId} created. Start camera to begin streaming.`;
+    role = "host";
+    try {
+        const res = await fetch(`/create/${roomId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password })
+        });
 
-		copyUrlBtn.onclick = () => {
-			const url = `${window.location.origin}?room=${encodeURIComponent(roomId)}`;
-			navigator.clipboard.writeText(url)
-				.then(() => alert("Room URL copied to clipboard:\n" + url))
-				.catch(err => alert("Failed to copy URL: " + err));
-		};
-	} catch (err) {
-		alert("Failed to create room: " + err.message);
-	}
+        // robust parsing: server may return JSON or plain text (rate limiter)
+        let body;
+        const ct = res.headers.get("content-type") || "";
+        if (ct.includes("application/json")) {
+            body = await res.json();
+        } else {
+            const text = await res.text();
+            try {
+                // try parse JSON again just in case
+                body = JSON.parse(text);
+            } catch {
+                body = { error: text };
+            }
+        }
+
+        if (!res.ok) {
+            alert("Room creation failed: " + (body?.error || `HTTP ${res.status}`));
+            return;
+        }
+
+        startCameraBtn.style.display = "block";
+        copyUrlBtn.style.display = "block";
+        statusEl.textContent = `Room ${roomId} created. Start camera to begin streaming.`;
+
+        copyUrlBtn.onclick = () => {
+            const url = `${window.location.origin}?room=${encodeURIComponent(roomId)}`;
+            navigator.clipboard.writeText(url)
+                .then(() => alert("Room URL copied to clipboard:\n" + url))
+                .catch(err => alert("Failed to copy URL: " + err));
+        };
+    } catch (err) {
+        alert("Failed to create room: " + err.message);
+    }
 };
 
 joinBtn.onclick = () => {
@@ -87,17 +103,31 @@ async function startCamera() {
 }
 
 function connectToRoom(roomId, password) {
-	if (socket && socket.connected) socket.disconnect();
-	socket = io();
-	setupSocketHandlers();
+    if (socket && socket.connected) socket.disconnect();
+    socket = io();
+    setupSocketHandlers();
 
-	socket.on("connect", () => {
-        socket.emit("join", { roomId, password });
-        createBtn.style.display = "none";
-        joinBtn.style.display = "none";
-        document.getElementById("roomId").disabled = true;
-        document.getElementById("password").disabled = true;
-        statusEl.textContent = "";
+    socket.on("connect", () => {
+        // use ack from server to decide when to update UI and clear previous errors
+        socket.emit("join", { roomId, password }, (res) => {
+            if (res && res.ok) {
+                // success: update UI and clear stale status
+                createBtn.style.display = "none";
+                joinBtn.style.display = "none";
+                document.getElementById("roomId").disabled = true;
+                document.getElementById("password").disabled = true;
+                statusEl.textContent = "";
+                authFailed = false;
+            } else {
+                // failed: show server message (could be rate-limit or invalid password)
+                statusEl.textContent = "Error: " + (res?.error || "Join failed");
+                authFailed = true;
+                // disconnect socket to keep UI consistent
+                if (socket) {
+                    socket.disconnect();
+                }
+            }
+        });
     });
 }
 
@@ -142,6 +172,31 @@ function setupConnection() {
 }
 
 function setupSocketHandlers() {
+    // optional: support server-side 'server-error' for clarity
+    socket.on("server-error", (msg) => {
+        console.warn("Server error:", msg);
+        statusEl.textContent = "Error: " + msg;
+        if (typeof msg === "string" && (msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("password"))) {
+            authFailed = true;
+        }
+        // ensure UI is reset
+        cleanupAndResetUI();
+    });
+
+    // existing error listener left for compatibility
+    socket.on("error", (msg) => {
+        // some socket.io internal errors may arrive here; show them
+        console.warn("Socket error:", msg);
+        if (typeof msg === "string") {
+            statusEl.textContent = "Error: " + msg;
+            if (msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("password")) {
+                authFailed = true;
+            }
+        }
+        // cleanup and reset
+        cleanupAndResetUI();
+    });
+
 	socket.on("peer-joined", async (peerId) => {
 		statusEl.textContent = `Peer ${peerId} joined.`;
 
@@ -187,18 +242,6 @@ function setupSocketHandlers() {
 			peerConnections[peerId].close();
 			delete peerConnections[peerId];
 		}
-	});
-
-	socket.on("error", (msg) => {
-		console.warn("Server error:", msg);
-		statusEl.textContent = "Error: " + msg;
-
-		// Detect password issue
-		if (msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("password")) {
-			authFailed = true; // 🚨 stop reconnect attempts
-		}
-
-		cleanupAndResetUI();
 	});
 }
 
