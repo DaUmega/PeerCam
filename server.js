@@ -53,9 +53,17 @@ app.post("/create/:roomId", createLimiter, async (req, res) => {
         return res.status(400).json({ error: "Password required" });
     }
     if (rooms[roomId]) {
-        // allow recreation if the room exists but is empty (clients.size === 0)
+        // allow recreation if the room exists but has no active socket connections
         const existing = rooms[roomId];
-        if (existing.clients && existing.clients.size === 0) {
+
+        // check whether any of the recorded client socket ids are still connected
+        const hasActive = Array.from(existing.clients.keys()).some(socketId => {
+            // io.sockets.sockets is a Map in Socket.IO v3/v4
+            return Boolean(io.sockets.sockets.get && io.sockets.sockets.get(socketId));
+        });
+
+        if (existing.clients && existing.clients.size === 0 || !hasActive) {
+            // stale / empty room: remove it and allow new creation
             clearTimeout(existing.timeout);
             delete rooms[roomId];
             // fall through to create new room

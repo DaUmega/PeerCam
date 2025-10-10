@@ -103,9 +103,25 @@ async function startCamera() {
 }
 
 function connectToRoom(roomId, password) {
-    if (socket && socket.connected) socket.disconnect();
-    socket = io();
+    // always tear down any previous socket/handlers before creating a new connection
+    if (socket) {
+        try {
+            socket.removeAllListeners();
+            socket.disconnect();
+        } catch (e) {
+            console.warn("Error while disconnecting previous socket:", e);
+        }
+        socket = null;
+    }
+
+    // force a fresh connection to avoid reuse of stale sid after network/VPN changes
+    socket = io({ forceNew: true, transports: ["polling", "websocket"] });
     setupSocketHandlers();
+
+    socket.on("connect_error", (err) => {
+        console.warn("Socket connect_error:", err);
+        statusEl.textContent = "Connection error: " + (err && err.message ? err.message : err);
+    });
 
     socket.on("connect", () => {
         // use ack from server to decide when to update UI and clear previous errors
@@ -124,7 +140,9 @@ function connectToRoom(roomId, password) {
                 authFailed = true;
                 // disconnect socket to keep UI consistent
                 if (socket) {
+                    socket.removeAllListeners();
                     socket.disconnect();
+                    socket = null;
                 }
             }
         });
@@ -246,26 +264,32 @@ function setupSocketHandlers() {
 }
 
 function handleHostDisconnected() {
-	if (reconnectInterval || authFailed) return; // don't loop twice or retry if auth failed
-	reconnectAttempts = 0;
-	statusEl.textContent = "Host disconnected. Waiting to reconnect...";
+    if (reconnectInterval || authFailed) return; // don't loop twice or retry if auth failed
+    reconnectAttempts = 0;
+    statusEl.textContent = "Host disconnected. Waiting to reconnect...";
 
-	reconnectInterval = setInterval(() => {
-		if (authFailed) {
-			clearInterval(reconnectInterval);
-			reconnectInterval = null;
-			return;
-		}
-		if (reconnectAttempts >= 12) { // 2 minutes total (10s interval)
-			clearInterval(reconnectInterval);
-			reconnectInterval = null;
-			statusEl.textContent = "Host did not reconnect within 2 minutes.";
-			return;
-		}
-		reconnectAttempts++;
-		console.log(`Reconnect attempt ${reconnectAttempts}`);
-		socket.emit("join", { roomId, password });
-	}, 10000);
+    reconnectInterval = setInterval(() => {
+        if (authFailed) {
+            clearInterval(reconnectInterval);
+            reconnectInterval = null;
+            return;
+        }
+        if (reconnectAttempts >= 12) { // 2 minutes total (10s interval)
+            clearInterval(reconnectInterval);
+            reconnectInterval = null;
+            statusEl.textContent = "Host did not reconnect within 2 minutes.";
+            return;
+        }
+        reconnectAttempts++;
+        console.log(`Reconnect attempt ${reconnectAttempts}`);
+
+        // create a fresh socket and attempt to join again (old socket may be dead / have stale sid)
+        try {
+            connectToRoom(roomId, password);
+        } catch (e) {
+            console.warn("Reconnect attempt failed to start:", e);
+        }
+    }, 10000);
 }
 
 function cleanupAndResetUI() {
