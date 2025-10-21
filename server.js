@@ -79,10 +79,10 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
-// Specific limiter for creating rooms: max 1 per IP per minute
+// Specific limiter for creating rooms: max 3 per IP per minute
 const createLimiter = rateLimit({
     windowMs: 60 * 1000,
-    max: 1,
+    max: 3,
     handler: (req, res) => {
         const msg = "Too many create requests from this IP, try again later.";
         if (req.accepts && req.accepts("json")) return res.status(429).json({ error: msg });
