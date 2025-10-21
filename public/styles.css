@@ -69,10 +69,13 @@ button:hover {
 /* changed code: layout grid with chat */
 .app-grid {
     display: flex;
-    gap: 20px;
+    gap: 12px; /* tightened gap so chat and video sit closer */
     justify-content: center;
     align-items: flex-start; /* align top edges of video and chat */
     margin-top: 20px;
+    max-width: 1000px; /* prevent excessive spreading on large screens */
+    margin-left: auto;
+    margin-right: auto;
 }
 
 /* make video container use available width and align sizes with chat */
@@ -80,7 +83,7 @@ button:hover {
     display: flex;
     flex-direction: column;
     align-items: center;
-    flex: 1 1 640px;
+    flex: 1 1 560px;
     gap: 12px;
 }
 
@@ -89,8 +92,8 @@ button:hover {
     background: #000;
     border-radius: 8px;
     overflow: hidden;
-    width: 640px;
-    height: 360px;
+    width: 560px;
+    height: 315px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -104,7 +107,7 @@ button:hover {
 
 /* keep chat height matched to single video height so layout feels aligned */
 .chat-panel {
-    width: 320px;
+    width: 300px;
     max-height: 360px;
     display: flex;
     flex-direction: column;

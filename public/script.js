@@ -20,13 +20,16 @@ const statusEl = document.getElementById("status");
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
 const displayNameInput = document.getElementById("displayName");
-
 // changed code: chat elements
 const chatPanel = document.getElementById("chatPanel");
 const chatMessages = document.getElementById("chatMessages");
 const chatInput = document.getElementById("chatInput");
 const chatSendBtn = document.getElementById("chatSendBtn");
 const chatToggle = document.getElementById("chatToggle");
+
+// new: explicit wrappers so we unhide the correct one
+const localWrapper = document.getElementById("localWrapper");
+const remoteWrapper = document.getElementById("remoteWrapper");
 
 const MAX_CHAT_LENGTH = 500; // client-side mirror of server limit
 
@@ -117,9 +120,9 @@ async function startCamera() {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         localVideo.srcObject = localStream;
         localVideo.style.display = "block";
-        // ensure the wrapper is shown only when we actually have a local stream
-        if (localVideo.parentElement && localVideo.parentElement.classList.contains("hidden")) {
-            localVideo.parentElement.classList.remove("hidden");
+        // ensure the local wrapper is shown only when we actually have a local stream
+        if (localWrapper && localWrapper.classList.contains("hidden")) {
+            localWrapper.classList.remove("hidden");
         }
         startCameraBtn.style.display = "none";
     } catch (err) {
@@ -203,8 +206,8 @@ function setupConnection() {
 		remoteVideo.srcObject = event.streams[0];
 		remoteVideo.style.display = "block";
 		// show remote wrapper only when a remote track arrives
-		if (remoteVideo.parentElement && remoteVideo.parentElement.classList.contains("hidden")) {
-			remoteVideo.parentElement.classList.remove("hidden");
+		if (remoteWrapper && remoteWrapper.classList.contains("hidden")) {
+			remoteWrapper.classList.remove("hidden");
 		}
 	};
 
@@ -428,15 +431,15 @@ function cleanupAndResetUI() {
     if (localVideo) {
         localVideo.srcObject = null;
         localVideo.style.display = "none";
-        if (localVideo.parentElement && !localVideo.parentElement.classList.contains("hidden")) {
-            localVideo.parentElement.classList.add("hidden");
+        if (localWrapper && !localWrapper.classList.contains("hidden")) {
+            localWrapper.classList.add("hidden");
         }
     }
     if (remoteVideo) {
         remoteVideo.srcObject = null;
         remoteVideo.style.display = "none";
-        if (remoteVideo.parentElement && !remoteVideo.parentElement.classList.contains("hidden")) {
-            remoteVideo.parentElement.classList.add("hidden");
+        if (remoteWrapper && !remoteWrapper.classList.contains("hidden")) {
+            remoteWrapper.classList.add("hidden");
         }
     }
 
@@ -478,8 +481,6 @@ window.addEventListener("DOMContentLoaded", () => {
     if (prefillRoom) document.getElementById("roomId").value = prefillRoom;
 
     // defensive: ensure wrappers are hidden on load if HTML didn't include classes
-    const wrappers = document.querySelectorAll(".video-wrapper");
-    wrappers.forEach(w => {
-        if (!w.classList.contains("hidden")) w.classList.add("hidden");
-    });
+    if (localWrapper && !localWrapper.classList.contains("hidden")) localWrapper.classList.add("hidden");
+    if (remoteWrapper && !remoteWrapper.classList.contains("hidden")) remoteWrapper.classList.add("hidden");
 });
