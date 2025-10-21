@@ -20,20 +20,18 @@ const statusEl = document.getElementById("status");
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
 const displayNameInput = document.getElementById("displayName");
-// changed code: chat elements
 const chatPanel = document.getElementById("chatPanel");
 const chatMessages = document.getElementById("chatMessages");
 const chatInput = document.getElementById("chatInput");
 const chatSendBtn = document.getElementById("chatSendBtn");
 const chatToggle = document.getElementById("chatToggle");
+const chatFullscreenBtn = document.getElementById("chatFullscreenBtn");
 
-// new: explicit wrappers so we unhide the correct one
 const localWrapper = document.getElementById("localWrapper");
 const remoteWrapper = document.getElementById("remoteWrapper");
 
-const MAX_CHAT_LENGTH = 500; // client-side mirror of server limit
+const MAX_CHAT_LENGTH = 500;
 
-// hide chat UI until a successful socket join/connection is established
 if (chatPanel) {
     chatPanel.style.display = "none";
 }
@@ -61,7 +59,6 @@ createBtn.onclick = async () => {
             body: JSON.stringify({ password })
         });
 
-        // robust parsing: server may return JSON or plain text (rate limiter)
         let body;
         const ct = res.headers.get("content-type") || "";
         if (ct.includes("application/json")) {
@@ -69,7 +66,6 @@ createBtn.onclick = async () => {
         } else {
             const text = await res.text();
             try {
-                // try parse JSON again just in case
                 body = JSON.parse(text);
             } catch {
                 body = { error: text };
@@ -97,22 +93,22 @@ createBtn.onclick = async () => {
 };
 
 joinBtn.onclick = () => {
-	roomId = document.getElementById("roomId").value.trim();
-	password = document.getElementById("password").value;
+    roomId = document.getElementById("roomId").value.trim();
+    password = document.getElementById("password").value;
 
-	if (!roomId || !password) {
-		alert("Room ID and password are required");
-		return;
-	}
+    if (!roomId || !password) {
+        alert("Room ID and password are required");
+        return;
+    }
 
-	role = "viewer";
-	authFailed = false; // reset before connecting
-	connectToRoom(roomId, password);
+    role = "viewer";
+    authFailed = false;
+    connectToRoom(roomId, password);
 };
 
 startCameraBtn.onclick = async () => {
-	await startCamera();
-	connectToRoom(roomId, password);
+    await startCamera();
+    connectToRoom(roomId, password);
 };
 
 async function startCamera() {
@@ -120,7 +116,6 @@ async function startCamera() {
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         localVideo.srcObject = localStream;
         localVideo.style.display = "block";
-        // ensure the local wrapper is shown only when we actually have a local stream
         if (localWrapper && localWrapper.classList.contains("hidden")) {
             localWrapper.classList.remove("hidden");
         }
@@ -131,7 +126,6 @@ async function startCamera() {
 }
 
 function connectToRoom(roomId, password) {
-    // always tear down any previous socket/handlers before creating a new connection
     if (socket) {
         try {
             socket.removeAllListeners();
@@ -142,7 +136,6 @@ function connectToRoom(roomId, password) {
         socket = null;
     }
 
-    // force a fresh connection to avoid reuse of stale sid after network/VPN changes
     socket = io({ forceNew: true, transports: ["polling", "websocket"] });
     setupSocketHandlers();
 
@@ -152,13 +145,10 @@ function connectToRoom(roomId, password) {
     });
 
     socket.on("connect", () => {
-        // include display name when joining
         const displayName = (displayNameInput && displayNameInput.value) ? displayNameInput.value.trim() : "";
 
-        // use ack from server to decide when to update UI and clear previous errors
         socket.emit("join", { roomId, password, displayName }, (res) => {
             if (res && res.ok) {
-                // success: update UI and clear stale status
                 createBtn.style.display = "none";
                 joinBtn.style.display = "none";
                 document.getElementById("roomId").disabled = true;
@@ -167,15 +157,12 @@ function connectToRoom(roomId, password) {
                 statusEl.textContent = "";
                 authFailed = false;
 
-                // show and enable chat now that we're connected to the room
                 if (chatPanel) chatPanel.style.display = "";
                 if (chatInput) chatInput.disabled = false;
                 if (chatSendBtn) chatSendBtn.disabled = false;
             } else {
-                // failed: show server message (could be rate-limit or invalid password)
                 statusEl.textContent = "Error: " + (res?.error || "Join failed");
                 authFailed = true;
-                // disconnect socket to keep UI consistent
                 if (socket) {
                     socket.removeAllListeners();
                     socket.disconnect();
@@ -187,64 +174,58 @@ function connectToRoom(roomId, password) {
 }
 
 function setupConnection() {
-	const pc = new RTCPeerConnection({
-		iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-		sdpSemantics: "unified-plan"
-	});
+    const pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        sdpSemantics: "unified-plan"
+    });
 
-	pc.onicecandidate = (event) => {
-		if (event.candidate) {
-			socket.emit("signal", {
-				roomId,
-				data: { candidate: event.candidate },
-				target: Object.keys(peerConnections).find(k => peerConnections[k] === pc)
-			});
-		}
-	};
+    pc.onicecandidate = (event) => {
+        if (event.candidate) {
+            socket.emit("signal", {
+                roomId,
+                data: { candidate: event.candidate },
+                target: Object.keys(peerConnections).find(k => peerConnections[k] === pc)
+            });
+        }
+    };
 
-	pc.ontrack = (event) => {
-		remoteVideo.srcObject = event.streams[0];
-		remoteVideo.style.display = "block";
-		// show remote wrapper only when a remote track arrives
-		if (remoteWrapper && remoteWrapper.classList.contains("hidden")) {
-			remoteWrapper.classList.remove("hidden");
-		}
-	};
+    pc.ontrack = (event) => {
+        remoteVideo.srcObject = event.streams[0];
+        remoteVideo.style.display = "block";
+        if (remoteWrapper && remoteWrapper.classList.contains("hidden")) {
+            remoteWrapper.classList.remove("hidden");
+        }
+    };
 
-	if (localStream) {
-		localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-	}
+    if (localStream) {
+        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+    }
 
-	// 🧠 Advanced connection monitoring
-	pc.onconnectionstatechange = () => {
-		const state = pc.connectionState;
-		console.log("Peer connection state:", state);
-		if (state === "disconnected" || state === "failed" || state === "closed") {
-			statusEl.textContent = "Connection lost. Attempting to reconnect...";
-			if (role === "viewer" && !authFailed) {
-				handleHostDisconnected();
-			}
-		}
-	};
+    pc.onconnectionstatechange = () => {
+        const state = pc.connectionState;
+        console.log("Peer connection state:", state);
+        if (state === "disconnected" || state === "failed" || state === "closed") {
+            statusEl.textContent = "Connection lost. Attempting to reconnect...";
+            if (role === "viewer" && !authFailed) {
+                handleHostDisconnected();
+            }
+        }
+    };
 
-	return pc;
+    return pc;
 }
 
 function setupSocketHandlers() {
-    // optional: support server-side 'server-error' for clarity
     socket.on("server-error", (msg) => {
         console.warn("Server error:", msg);
         statusEl.textContent = "Error: " + msg;
         if (typeof msg === "string" && (msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("password"))) {
             authFailed = true;
         }
-        // ensure UI is reset
         cleanupAndResetUI();
     });
 
-    // existing error listener left for compatibility
     socket.on("error", (msg) => {
-        // some socket.io internal errors may arrive here; show them
         console.warn("Socket error:", msg);
         if (typeof msg === "string") {
             statusEl.textContent = "Error: " + msg;
@@ -252,66 +233,63 @@ function setupSocketHandlers() {
                 authFailed = true;
             }
         }
-        // cleanup and reset
         cleanupAndResetUI();
     });
 
-    // changed code: receive chat messages
     socket.on("chat", (payload) => {
-        // payload: { from, message, time }
         appendChatMessage(payload);
     });
 
-	socket.on("peer-joined", async (peerId) => {
-		statusEl.textContent = `Peer ${peerId} joined.`;
+    socket.on("peer-joined", async (peerId) => {
+        statusEl.textContent = `Peer ${peerId} joined.`;
 
-		if (role === "host") {
-			const pc = setupConnection();
-			peerConnections[peerId] = pc;
-			const offer = await pc.createOffer();
-			await pc.setLocalDescription(offer);
-			socket.emit("signal", { roomId, data: { sdp: offer }, target: peerId });
-		}
-	});
+        if (role === "host") {
+            const pc = setupConnection();
+            peerConnections[peerId] = pc;
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            socket.emit("signal", { roomId, data: { sdp: offer }, target: peerId });
+        }
+    });
 
-	socket.on("signal", async ({ from, data }) => {
-		let pc = peerConnections[from];
-		if (!pc) {
-			pc = setupConnection();
-			peerConnections[from] = pc;
-		}
+    socket.on("signal", async ({ from, data }) => {
+        let pc = peerConnections[from];
+        if (!pc) {
+            pc = setupConnection();
+            peerConnections[from] = pc;
+        }
 
-		if (data.sdp) {
-			await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-			if (data.sdp.type === "offer") {
-				const answer = await pc.createAnswer();
-				await pc.setLocalDescription(answer);
-				socket.emit("signal", { roomId, data: { sdp: answer }, target: from });
-			}
+        if (data.sdp) {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+            if (data.sdp.type === "offer") {
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                socket.emit("signal", { roomId, data: { sdp: answer }, target: from });
+            }
 
-			pendingCandidates[from]?.forEach(c => pc.addIceCandidate(new RTCIceCandidate(c)));
-			pendingCandidates[from] = [];
-		} else if (data.candidate) {
-			if (pc.remoteDescription && pc.remoteDescription.type) {
-				await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-			} else {
-				pendingCandidates[from] = pendingCandidates[from] || [];
-				pendingCandidates[from].push(data.candidate);
-			}
-		}
-	});
+            pendingCandidates[from]?.forEach(c => pc.addIceCandidate(new RTCIceCandidate(c)));
+            pendingCandidates[from] = [];
+        } else if (data.candidate) {
+            if (pc.remoteDescription && pc.remoteDescription.type) {
+                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            } else {
+                pendingCandidates[from] = pendingCandidates[from] || [];
+                pendingCandidates[from].push(data.candidate);
+            }
+        }
+    });
 
-	socket.on("peer-left", (peerId) => {
-		statusEl.textContent = `Peer ${peerId} left.`;
-		if (peerConnections[peerId]) {
-			peerConnections[peerId].close();
-			delete peerConnections[peerId];
-		}
-	});
+    socket.on("peer-left", (peerId) => {
+        statusEl.textContent = `Peer ${peerId} left.`;
+        if (peerConnections[peerId]) {
+            peerConnections[peerId].close();
+            delete peerConnections[peerId];
+        }
+    });
 }
 
 function handleHostDisconnected() {
-    if (reconnectInterval || authFailed) return; // don't loop twice or retry if auth failed
+    if (reconnectInterval || authFailed) return;
     reconnectAttempts = 0;
     statusEl.textContent = "Host disconnected. Waiting to reconnect...";
 
@@ -321,7 +299,7 @@ function handleHostDisconnected() {
             reconnectInterval = null;
             return;
         }
-        if (reconnectAttempts >= 12) { // 2 minutes total (10s interval)
+        if (reconnectAttempts >= 12) {
             clearInterval(reconnectInterval);
             reconnectInterval = null;
             statusEl.textContent = "Host did not reconnect within 2 minutes.";
@@ -330,7 +308,6 @@ function handleHostDisconnected() {
         reconnectAttempts++;
         console.log(`Reconnect attempt ${reconnectAttempts}`);
 
-        // create a fresh socket and attempt to join again (old socket may be dead / have stale sid)
         try {
             connectToRoom(roomId, password);
         } catch (e) {
@@ -339,16 +316,13 @@ function handleHostDisconnected() {
     }, 10000);
 }
 
-// changed code: decode HTML entities before rendering so server-escaped entities (eg. &#39;) appear correctly
 function decodeHtmlEntities(str) {
     if (!str) return "";
     const div = document.createElement("div");
-    // innerHTML will decode entities like &#39; &amp; etc. — message has been sanitized server-side already
     div.innerHTML = str;
     return div.textContent;
 }
 
-// changed append to show display name (decoded) and fallback to short id
 function appendChatMessage({ from, name, message, time } = {}) {
     if (!chatMessages) return;
     const item = document.createElement("div");
@@ -363,19 +337,15 @@ function appendChatMessage({ from, name, message, time } = {}) {
     meta.textContent = `${ts} • ${who}`;
 
     const text = document.createElement("div");
-    // decode server-sent HTML entities (server sanitizes with HTML escapes)
     const decoded = decodeHtmlEntities(message || "");
-    // use textContent to avoid interpreting HTML (we decoded entities safely)
     text.textContent = decoded;
 
     item.appendChild(meta);
     item.appendChild(text);
     chatMessages.appendChild(item);
-    // scroll to bottom smoothly
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-// send message (with client-side trimming/limit)
 function sendChatMessage() {
     if (!socket || socket.disconnected) return;
     const raw = (chatInput.value || "").trim();
@@ -383,11 +353,9 @@ function sendChatMessage() {
     const msg = raw.slice(0, MAX_CHAT_LENGTH);
     socket.emit("chat", { roomId, message: msg }, (res) => {
         if (res && res.ok) {
-            // optional: mark as sent, server will re-emit to room so sender sees message too
             chatInput.value = "";
         } else {
             const err = res?.error || "Failed to send";
-            // show local error message
             appendChatMessage({ name: "System", message: err, time: Date.now() });
         }
     });
@@ -414,7 +382,61 @@ if (chatToggle) {
     });
 }
 
-// ensure chat UI is cleared/reset on cleanup
+if (chatFullscreenBtn) {
+    chatFullscreenBtn.addEventListener("click", async () => {
+        if (!chatPanel) return;
+
+        // detect whether chatPanel is currently fullscreen (standard + vendor prefixes)
+        const isStdFullscreen = document.fullscreenElement === chatPanel;
+        const isWebkitFullscreen = document.webkitFullscreenElement === chatPanel;
+        const isMsFullscreen = document.msFullscreenElement === chatPanel;
+        const isCurrentlyFullscreen = !!(isStdFullscreen || isWebkitFullscreen || isMsFullscreen);
+
+        // If Fullscreen API is available prefer it so user can press ESC to exit.
+        const supportsFullscreen = !!(chatPanel.requestFullscreen || chatPanel.webkitRequestFullscreen || chatPanel.msRequestFullscreen);
+
+        try {
+            if (supportsFullscreen) {
+                if (isCurrentlyFullscreen) {
+                    if (document.exitFullscreen) await document.exitFullscreen();
+                    else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+                    else if (document.msExitFullscreen) await document.msExitFullscreen();
+                    document.body.classList.remove("chat-fullscreen-active");
+                } else {
+                    if (chatPanel.requestFullscreen) await chatPanel.requestFullscreen();
+                    else if (chatPanel.webkitRequestFullscreen) await chatPanel.webkitRequestFullscreen();
+                    else if (chatPanel.msRequestFullscreen) await chatPanel.msRequestFullscreen();
+                    // when chat is fullscreen hide other UI (video/controls)
+                    document.body.classList.add("chat-fullscreen-active");
+                }
+            } else {
+                // fallback: toggle CSS fullscreen class + hide other UI
+                const now = chatPanel.classList.toggle("fullscreen");
+                document.body.classList.toggle("chat-fullscreen-active", now);
+            }
+        } catch (err) {
+            console.warn("Fullscreen toggle failed:", err);
+        }
+    });
+
+    // Keep body class in sync if user exits fullscreen via ESC or other UI.
+    const onFsChange = () => {
+        const isStd = document.fullscreenElement === chatPanel;
+        const isWebkit = document.webkitFullscreenElement === chatPanel;
+        const isMs = document.msFullscreenElement === chatPanel;
+        const active = !!(isStd || isWebkit || isMs);
+        document.body.classList.toggle("chat-fullscreen-active", active);
+        // if not active, also remove fallback class
+        if (!active && chatPanel.classList.contains("fullscreen")) {
+            chatPanel.classList.remove("fullscreen");
+        }
+    };
+
+    document.addEventListener("fullscreenchange", onFsChange);
+    document.addEventListener("webkitfullscreenchange", onFsChange);
+    document.addEventListener("msfullscreenchange", onFsChange);
+}
+
 function cleanupAndResetUI() {
     if (reconnectInterval) {
         clearInterval(reconnectInterval);
@@ -427,7 +449,6 @@ function cleanupAndResetUI() {
     Object.values(peerConnections).forEach(pc => pc.close());
     for (const k in peerConnections) delete peerConnections[k];
 
-    // hide video elements and their wrappers again
     if (localVideo) {
         localVideo.srcObject = null;
         localVideo.style.display = "none";
@@ -451,7 +472,6 @@ function cleanupAndResetUI() {
     document.getElementById("password").disabled = false;
     if (displayNameInput) displayNameInput.disabled = false;
 
-    // changed code: reset chat and hide it until next successful join
     if (chatMessages) chatMessages.innerHTML = "";
     if (chatInput) {
         chatInput.value = "";
@@ -465,11 +485,11 @@ function cleanupAndResetUI() {
 }
 
 function enableFullscreenOnClick(videoElement) {
-	videoElement.addEventListener("click", () => {
-		if (videoElement.requestFullscreen) videoElement.requestFullscreen();
-		else if (videoElement.webkitRequestFullscreen) videoElement.webkitRequestFullscreen();
-		else if (videoElement.msRequestFullscreen) videoElement.msRequestFullscreen();
-	});
+    videoElement.addEventListener("click", () => {
+        if (videoElement.requestFullscreen) videoElement.requestFullscreen();
+        else if (videoElement.webkitRequestFullscreen) videoElement.webkitRequestFullscreen();
+        else if (videoElement.msRequestFullscreen) videoElement.msRequestFullscreen();
+    });
 }
 
 enableFullscreenOnClick(localVideo);
@@ -480,7 +500,6 @@ window.addEventListener("DOMContentLoaded", () => {
     const prefillRoom = params.get("room");
     if (prefillRoom) document.getElementById("roomId").value = prefillRoom;
 
-    // defensive: ensure wrappers are hidden on load if HTML didn't include classes
     if (localWrapper && !localWrapper.classList.contains("hidden")) localWrapper.classList.add("hidden");
     if (remoteWrapper && !remoteWrapper.classList.contains("hidden")) remoteWrapper.classList.add("hidden");
 });

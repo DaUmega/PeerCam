@@ -66,19 +66,17 @@ button:hover {
     margin-top: 20px;
 }
 
-/* changed code: layout grid with chat */
 .app-grid {
     display: flex;
-    gap: 12px; /* tightened gap so chat and video sit closer */
+    gap: 12px;
     justify-content: center;
-    align-items: flex-start; /* align top edges of video and chat */
+    align-items: flex-start;
     margin-top: 20px;
-    max-width: 1000px; /* prevent excessive spreading on large screens */
+    max-width: 1000px;
     margin-left: auto;
     margin-right: auto;
 }
 
-/* make video container use available width and align sizes with chat */
 .video-container {
     display: flex;
     flex-direction: column;
@@ -87,7 +85,6 @@ button:hover {
     gap: 12px;
 }
 
-/* ensure both video panes are the same size so chat lines up */
 .video-wrapper {
     background: #000;
     border-radius: 8px;
@@ -105,7 +102,6 @@ button:hover {
     object-fit: cover;
 }
 
-/* keep chat height matched to single video height so layout feels aligned */
 .chat-panel {
     width: 300px;
     max-height: 360px;
@@ -150,7 +146,6 @@ button:hover {
     flex: 1 1 auto;
 }
 
-/* message bubble styles */
 .chat-message {
     max-width: 100%;
     padding: 8px 10px;
@@ -169,7 +164,6 @@ button:hover {
     margin-bottom: 4px;
 }
 
-/* input row */
 .chat-input-row {
     display: flex;
     gap: 8px;
@@ -197,13 +191,11 @@ button:hover {
     font-weight: 700;
 }
 
-/* collapsed chat */
 .chat-panel.collapsed .chat-messages,
 .chat-panel.collapsed .chat-input-row {
     display: none;
 }
 
-/* ensure wrappers are hidden until needed to avoid showing empty black boxes */
 .video-wrapper.hidden {
     display: none;
     background: transparent;
@@ -222,6 +214,114 @@ button:hover {
 
     .video-wrapper {
         width: calc(100% - 40px);
-        height: 220px;
+        /* replace fixed height with aspect-ratio so height scales correctly */
+        height: auto;
+        aspect-ratio: 16/9;
     }
+
+    /* avoid crop on small screens */
+    .video-wrapper video {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+    }
+}
+
+@media (max-width: 1080px) {
+    .app-grid {
+        flex-direction: column;
+        align-items: center;
+        gap: 8px; /* reduced gap for tighter stacking on phones */
+    }
+
+    /* prevent .video-container from shrinking to half height */
+    .video-container {
+        margin-top: 8px; /* reduce top spacing */
+        gap: 8px;
+        width: 100%;
+        flex: 0 0 auto; /* don't allow it to flex down on small screens */
+    }
+
+    .chat-panel {
+        width: calc(100% - 24px);
+        max-height: 360px;
+        margin: 0; /* remove extra margin so it sits close to video */
+    }
+
+    .video-wrapper {
+        width: calc(100% - 24px);
+        height: auto; /* let aspect-ratio determine height */
+        aspect-ratio: 16/9;
+        margin: 0; /* remove extra spacing */
+    }
+
+    /* avoid cropping the video on phones */
+    .video-wrapper video {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+    }
+}
+
+/* keep portrait rule but ensure it stacks reliably */
+@media (orientation: portrait) {
+    .app-grid {
+        flex-direction: column;
+        gap: 8px; /* tighten vertical gap in portrait */
+    }
+
+    .chat-panel {
+        width: calc(100% - 24px);
+        max-height: 70vh; /* Limit height to 70% of viewport height */
+        margin: 0; /* sit directly under the video */
+    }
+
+    .video-container {
+        width: 100%;
+        margin: 0;
+        flex: 0 0 auto; /* don't allow shrinking so height stays correct */
+    }
+
+    .video-wrapper {
+        width: calc(100% - 24px);
+        height: auto;
+        aspect-ratio: 16/9; /* keeps correct 16:9 height on all devices */
+        margin: 0;
+    }
+
+    .video-wrapper video {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+    }
+}
+
+/* fallback fullscreen styling for chat panel (used when Fullscreen API is not available) */
+.chat-panel.fullscreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1100;
+    border-radius: 0;
+    box-shadow: none;
+    background: #ffffff;
+}
+
+/* when chat is fullscreen we hide video and controls to focus on chat only */
+body.chat-fullscreen-active .video-container,
+body.chat-fullscreen-active #controls {
+    display: none;
+}
+
+.fullscreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1000;
+    background: #ffffff;
+    box-shadow: none;
 }
