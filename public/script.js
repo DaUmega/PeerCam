@@ -30,6 +30,10 @@ const chatFullscreenBtn = document.getElementById("chatFullscreenBtn");
 const localWrapper = document.getElementById("localWrapper");
 const remoteWrapper = document.getElementById("remoteWrapper");
 
+let switchCameraBtn = document.getElementById("switchCameraBtn");
+let currentVideoDeviceId = null;
+let videoInputDevices = [];
+
 const MAX_CHAT_LENGTH = 500;
 
 if (chatPanel) {
@@ -87,6 +91,8 @@ createBtn.onclick = async () => {
                 .then(() => alert("Room URL copied to clipboard:\n" + url))
                 .catch(err => alert("Failed to copy URL: " + err));
         };
+        // show switch button for hosts only when camera started (hidden until camera active)
+        if (switchCameraBtn) switchCameraBtn.style.display = "none";
     } catch (err) {
         alert("Failed to create room: " + err.message);
     }
@@ -111,18 +117,161 @@ startCameraBtn.onclick = async () => {
     connectToRoom(roomId, password);
 };
 
+async function updateVideoInputs() {
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        videoInputDevices = devices.filter(d => d.kind === "videoinput");
+    } catch (e) {
+        videoInputDevices = [];
+    }
+}
+
 async function startCamera() {
     try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        // prefer existing device id if known (e.g., when switching)
+        const constraints = { audio: true, video: currentVideoDeviceId ? { deviceId: { exact: currentVideoDeviceId } } : { facingMode: "user" } };
+        localStream = await navigator.mediaDevices.getUserMedia(constraints);
         localVideo.srcObject = localStream;
         localVideo.style.display = "block";
         if (localWrapper && localWrapper.classList.contains("hidden")) {
             localWrapper.classList.remove("hidden");
         }
         startCameraBtn.style.display = "none";
+
+        // determine current video device id
+        const vTrack = localStream.getVideoTracks()[0];
+        currentVideoDeviceId = vTrack?.getSettings?.().deviceId || null;
+
+        await updateVideoInputs();
+        if (switchCameraBtn) {
+            // show switch button only if multiple video devices are present
+            if (videoInputDevices.length > 1) {
+                switchCameraBtn.style.display = "block";
+                switchCameraBtn.disabled = false;
+            } else {
+                // still allow toggle by facingMode if only one device id but device supports facingMode change
+                switchCameraBtn.style.display = "block";
+                switchCameraBtn.disabled = false;
+            }
+        }
     } catch (err) {
         alert("Failed to access camera: " + err.message);
     }
+}
+
+async function switchCamera() {
+    if (!navigator.mediaDevices || !localStream) return;
+
+    await updateVideoInputs();
+
+    let newDeviceId = null;
+
+    if (videoInputDevices.length > 1 && currentVideoDeviceId) {
+        // cycle to next device in list
+        const ids = videoInputDevices.map(d => d.deviceId);
+        const idx = ids.indexOf(currentVideoDeviceId);
+        const next = (idx >= 0) ? (idx + 1) % ids.length : 0;
+        newDeviceId = ids[next];
+    } else if (videoInputDevices.length > 1 && !currentVideoDeviceId) {
+        newDeviceId = videoInputDevices[0].deviceId;
+    }
+
+    // try deviceId switch first when available
+    let newStream = null;
+    if (newDeviceId) {
+        try {
+            newStream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: newDeviceId } }, audio: false });
+        } catch (e) {
+            console.warn("Switch by deviceId failed, will try facingMode toggle:", e);
+            newStream = null;
+        }
+    }
+
+    // fallback: try toggling facingMode
+    if (!newStream) {
+        // determine current facing if possible
+        const currentFacing = localStream.getVideoTracks()[0]?.getSettings?.().facingMode || null;
+        const wanted = (currentFacing === "environment") ? "user" : "environment";
+        try {
+            newStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: wanted } }, audio: false });
+        } catch (e) {
+            console.warn("Switch by facingMode failed:", e);
+            // nothing to do if both fail
+            appendChatMessage({ name: "System", message: "Unable to switch camera.", time: Date.now() });
+            return;
+        }
+    }
+
+    const newVideoTrack = newStream.getVideoTracks()[0];
+    if (!newVideoTrack) {
+        appendChatMessage({ name: "System", message: "No video track available when switching camera.", time: Date.now() });
+        return;
+    }
+
+    // Replace track in localStream
+    const oldVideoTrack = localStream.getVideoTracks()[0];
+    try {
+        // add new track then remove old (keeps stream id stable in some browsers)
+        localStream.addTrack(newVideoTrack);
+        if (oldVideoTrack) {
+            localStream.removeTrack(oldVideoTrack);
+            oldVideoTrack.stop();
+        }
+    } catch (e) {
+        console.warn("Replacing tracks on MediaStream failed:", e);
+    }
+
+    // update current device id if available
+    currentVideoDeviceId = newVideoTrack.getSettings?.().deviceId || currentVideoDeviceId;
+
+    // update UI
+    localVideo.srcObject = null;
+    localVideo.srcObject = localStream;
+    localVideo.play().catch(()=>{});
+
+    // inform peers: replace sender's track where possible
+    Object.values(peerConnections).forEach(pc => {
+        try {
+            const senders = pc.getSenders ? pc.getSenders() : [];
+            const videoSender = senders.find(s => s.track && s.track.kind === "video");
+            if (videoSender && videoSender.replaceTrack) {
+                videoSender.replaceTrack(newVideoTrack).catch(err => {
+                    console.warn("replaceTrack failed, attempting to remove/add:", err);
+                    // fallback: remove old sender track by adding new track directly
+                    try {
+                        pc.addTrack(newVideoTrack, localStream);
+                    } catch (e) { /* best-effort */ }
+                });
+            } else {
+                // fallback: add new track
+                try {
+                    pc.addTrack(newVideoTrack, localStream);
+                } catch (e) { /* ignore */ }
+            }
+        } catch (e) {
+            console.warn("Error updating peer sender for new video track:", e);
+        }
+    });
+
+    // stop the temporary stream's audio (none requested) and cleanup (if any leftover tracks)
+    newStream.getTracks().forEach(t => {
+        if (t.kind !== "video") t.stop();
+    });
+
+    // refresh input list (some browsers report different device ids after change)
+    await updateVideoInputs();
+}
+
+// wire up switch button
+if (switchCameraBtn) {
+    switchCameraBtn.addEventListener("click", async () => {
+        switchCameraBtn.disabled = true;
+        try {
+            await switchCamera();
+        } finally {
+            switchCameraBtn.disabled = false;
+        }
+    });
 }
 
 function connectToRoom(roomId, password) {
@@ -462,6 +611,14 @@ function cleanupAndResetUI() {
         if (remoteWrapper && !remoteWrapper.classList.contains("hidden")) {
             remoteWrapper.classList.add("hidden");
         }
+    }
+
+    // reset camera switch state
+    currentVideoDeviceId = null;
+    videoInputDevices = [];
+    if (switchCameraBtn) {
+        switchCameraBtn.style.display = "none";
+        switchCameraBtn.disabled = true;
     }
 
     startCameraBtn.style.display = "none";
