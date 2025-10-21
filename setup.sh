@@ -38,11 +38,11 @@ sudo iptables -C INPUT -p tcp --dport 80 -j ACCEPT || sudo iptables -I INPUT -p 
 sudo iptables -C INPUT -p tcp --dport 443 -j ACCEPT || sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT
 
 echo -e "${GREEN}[+] Creating systemd service for server.js...${NC}"
-SERVICE_FILE="/etc/systemd/system/peercam.service"
+SERVICE_FILE="/etc/systemd/system/peerlive.service"
 
 sudo bash -c "cat > $SERVICE_FILE" <<EOL
 [Unit]
-Description=PeerCam Node.js App
+Description=PeerLive Node.js App
 After=network.target
 
 [Service]
@@ -58,13 +58,13 @@ WantedBy=multi-user.target
 EOL
 
 sudo systemctl daemon-reload
-sudo systemctl enable peercam
-sudo systemctl restart peercam
+sudo systemctl enable peerlive
+sudo systemctl restart peerlive
 
 echo -e "${GREEN}[+] Configuring Apache reverse proxy...${NC}"
 APACHE_CONF="/etc/apache2/sites-available/000-default.conf"
 
-sudo cp $APACHE_CONF ${APACHE_CONF}.bak
+sudo cp $APACHE_CONF ${APACHE_CONF}.bak || true
 
 sudo bash -c "cat > $APACHE_CONF" <<EOL
 <VirtualHost *:80>
@@ -74,8 +74,8 @@ sudo bash -c "cat > $APACHE_CONF" <<EOL
     ProxyPass / http://127.0.0.1:8080/
     ProxyPassReverse / http://127.0.0.1:8080/
 
-    ErrorLog \${APACHE_LOG_DIR}/peercam_error.log
-    CustomLog \${APACHE_LOG_DIR}/peercam_access.log combined
+    ErrorLog \${APACHE_LOG_DIR}/peerlive_error.log
+    CustomLog \${APACHE_LOG_DIR}/peerlive_access.log combined
 </VirtualHost>
 EOL
 
@@ -85,8 +85,7 @@ sudo systemctl reload apache2
 sudo systemctl restart apache2
 
 echo -e "${GREEN}[+] Obtaining SSL certificate with Certbot...${NC}"
-sudo pkill -9 certbot || true
 sudo certbot --apache -d $DOMAIN -m $EMAIL --agree-tos --non-interactive --redirect
 
 echo -e "${GREEN}[✓] Deployment finished!${NC}"
-echo -e "${GREEN}Your PeerCam app should be accessible at: https://$DOMAIN${NC}"
+echo -e "${GREEN}Your PeerLive app should be accessible at: https://$DOMAIN${NC}"
