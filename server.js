@@ -15,6 +15,58 @@ const ROOM_TTL = 1000 * 60 * 30; // 30 min auto cleanup
 const MAX_CONNECTIONS_PER_IP = 5; // Prevent DDoS: max clients per IP per room
 const SALT_ROUNDS = 10; // bcrypt cost factor
 
+// Chat configuration and sanitization utilities
+const MAX_CHAT_LENGTH = 500; // max characters per chat message
+const MAX_NAME_LENGTH = 32; // max characters for display name
+// Basic per-socket message rate limiting (sliding window)
+const CHAT_RATE_WINDOW_MS = 10 * 1000; // 10s
+const CHAT_MAX_PER_WINDOW = 10; // max messages per window
+
+function escapeHtml(str) {
+    // minimal but effective escaping of characters that can break HTML/JS contexts
+    return str.replace(/[&<>"'`\/]/g, (s) => {
+        switch (s) {
+            case "&": return "&amp;";
+            case "<": return "&lt;";
+            case ">": return "&gt;";
+            case '"': return "&quot;";
+            case "'": return "&#39;";
+            case "`": return "&#96;";
+            case "/": return "&#x2F;";
+            default: return s;
+        }
+    });
+}
+
+function sanitizeMessage(input) {
+    if (typeof input !== "string") return "";
+    // normalize newlines, trim leading/trailing whitespace
+    let msg = input.replace(/\r\n|\r/g, "\n").trim();
+
+    // remove control characters except newline and tab
+    msg = msg.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]+/g, "");
+
+    // enforce max length
+    if (msg.length > MAX_CHAT_LENGTH) {
+        msg = msg.slice(0, MAX_CHAT_LENGTH);
+    }
+
+    // finally escape HTML-sensitive characters
+    msg = escapeHtml(msg);
+
+    return msg;
+}
+
+function sanitizeName(input) {
+    if (typeof input !== "string") return "";
+    let name = input.replace(/[\r\n]/g, " ").trim();
+    // remove control characters
+    name = name.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]+/g, "");
+    if (name.length > MAX_NAME_LENGTH) name = name.slice(0, MAX_NAME_LENGTH);
+    name = escapeHtml(name);
+    return name;
+}
+
 // Global rate limiter: max 20 requests per IP per minute
 const globalLimiter = rateLimit({
     windowMs: 60 * 1000,
@@ -77,6 +129,7 @@ app.post("/create/:roomId", createLimiter, async (req, res) => {
         rooms[roomId] = {
             passwordHash,
             clients: new Map(), // socketId -> IP
+            names: new Map(),   // socketId -> displayName
             createdAt: Date.now(),
             timeout: setTimeout(() => {
                 cleanupRoom(roomId);
@@ -103,7 +156,10 @@ io.on("connection", (socket) => {
     const ip = socket.handshake.address;
     console.log(`New client connected from ${ip}`);
 
-    socket.on("join", async ({ roomId, password } = {}, callback) => {
+    // per-socket chat timestamps for simple rate limiting
+    socket._chatTimestamps = [];
+
+    socket.on("join", async ({ roomId, password, displayName } = {}, callback) => {
         // support optional callback ack
         const ack = typeof callback === "function" ? callback : null;
 
@@ -156,6 +212,10 @@ io.on("connection", (socket) => {
 
         // Register client
         room.clients.set(socket.id, ip);
+        // store sanitized display name (fallback to socket id truncated)
+        const sname = sanitizeName(displayName) || socket.id;
+        room.names.set(socket.id, sname);
+
         socket.join(roomId);
         socket.to(roomId).emit("peer-joined", socket.id);
 
@@ -169,32 +229,85 @@ io.on("connection", (socket) => {
     });
 
     socket.on("signal", ({ roomId, data, target }) => {
-		const room = rooms[roomId];
-		if (!room || !room.clients.has(socket.id)) return; // not in room
+        const room = rooms[roomId];
+        if (!room || !room.clients.has(socket.id)) return; // not in room
 
-		if (target && room.clients.has(target)) {
-			io.to(target).emit("signal", { from: socket.id, data });
-		} else {
-			socket.to(roomId).emit("signal", { from: socket.id, data });
-		}
-	});
+        if (target && room.clients.has(target)) {
+            io.to(target).emit("signal", { from: socket.id, data });
+        } else {
+            socket.to(roomId).emit("signal", { from: socket.id, data });
+        }
+    });
+
+    // Chat handler: sanitized, length-restricted, basic rate limiting
+    socket.on("chat", ({ roomId, message, target } = {}, callback) => {
+        const ack = typeof callback === "function" ? callback : null;
+        const room = rooms[roomId];
+
+        if (!room || !room.clients.has(socket.id)) {
+            const err = "Not in room";
+            if (ack) ack({ ok: false, error: err });
+            socket.emit("server-error", err);
+            return;
+        }
+
+        // basic per-socket rate limiting
+        const now = Date.now();
+        const timestamps = socket._chatTimestamps || [];
+        // remove old entries
+        while (timestamps.length && (now - timestamps[0]) > CHAT_RATE_WINDOW_MS) {
+            timestamps.shift();
+        }
+        if (timestamps.length >= CHAT_MAX_PER_WINDOW) {
+            const err = "Too many messages, slow down";
+            if (ack) ack({ ok: false, error: err });
+            socket.emit("server-error", err);
+            return;
+        }
+        timestamps.push(now);
+        socket._chatTimestamps = timestamps;
+
+        const clean = sanitizeMessage(message);
+        if (!clean) {
+            const err = "Empty or invalid message";
+            if (ack) ack({ ok: false, error: err });
+            return;
+        }
+
+        const payload = {
+            from: socket.id,
+            name: room.names.get(socket.id) || socket.id,
+            message: clean,
+            time: Date.now()
+        };
+
+        if (target && room.clients.has(target)) {
+            io.to(target).emit("chat", payload);
+            if (ack) ack({ ok: true, private: true });
+        } else {
+            // broadcast to everyone in room (including sender)
+            io.to(roomId).emit("chat", payload);
+            if (ack) ack({ ok: true, private: false });
+        }
+    });
 
     socket.on("disconnect", () => {
-		console.log(`Client from ${ip} disconnected`);
-		for (const roomId in rooms) {
-			if (rooms[roomId].clients.has(socket.id)) {
-				rooms[roomId].clients.delete(socket.id);
-				socket.to(roomId).emit("peer-left", socket.id);
-				if (rooms[roomId].clients.size === 0) {
-					setTimeout(() => {
-						if (rooms[roomId] && rooms[roomId].clients.size === 0) {
-							cleanupRoom(roomId);
-						}
-					}, 2 * 60 * 1000); // 2-minutes grace period for reconnect
-				}
-			}
-		}
-	});
+        console.log(`Client from ${ip} disconnected`);
+        for (const roomId in rooms) {
+            if (rooms[roomId].clients.has(socket.id)) {
+                rooms[roomId].clients.delete(socket.id);
+                rooms[roomId].names.delete(socket.id);
+                socket.to(roomId).emit("peer-left", socket.id);
+                if (rooms[roomId].clients.size === 0) {
+                    setTimeout(() => {
+                        if (rooms[roomId] && rooms[roomId].clients.size === 0) {
+                            cleanupRoom(roomId);
+                        }
+                    }, 2 * 60 * 1000); // 2-minutes grace period for reconnect
+                }
+            }
+        }
+    });
 });
 
 // Start server

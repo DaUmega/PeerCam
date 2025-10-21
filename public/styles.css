@@ -66,36 +66,159 @@ button:hover {
     margin-top: 20px;
 }
 
+/* changed code: layout grid with chat */
+.app-grid {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    align-items: flex-start; /* align top edges of video and chat */
+    margin-top: 20px;
+}
+
+/* make video container use available width and align sizes with chat */
+.video-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1 1 640px;
+    gap: 12px;
+}
+
+/* ensure both video panes are the same size so chat lines up */
 .video-wrapper {
-    display: inline-block;
-    margin: 15px;
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-video {
-    width: 640px;
-    height: 480px;
-    object-fit: cover;
-    display: none;
     background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+    width: 640px;
+    height: 360px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.video-wrapper video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* keep chat height matched to single video height so layout feels aligned */
+.chat-panel {
+    width: 320px;
+    max-height: 360px;
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
     border-radius: 10px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+    overflow: hidden;
 }
 
-video:fullscreen,
-video:-webkit-full-screen,
-video:-moz-full-screen,
-video:-ms-fullscreen {
-    width: 100vw !important;
-    height: 100vh !important;
-    object-fit: contain !important;
-    background: #000 !important;
-    border-radius: 0 !important;
+.chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: linear-gradient(180deg,#f8fafc,#ffffff);
+    border-bottom: 1px solid #e6edf3;
 }
 
-@media (max-width: 1080px) {
-    video {
-        width: 100%;
+.chat-title {
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.chat-toggle {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    color: #475569;
+}
+
+.chat-messages {
+    padding: 12px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: #f8fafc;
+    flex: 1 1 auto;
+}
+
+/* message bubble styles */
+.chat-message {
+    max-width: 100%;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #0f172a;
+    border: 1px solid #e6edf3;
+    font-size: 0.9rem;
+    line-height: 1.2;
+    word-break: break-word;
+}
+
+.chat-meta {
+    font-size: 0.75rem;
+    color: #64748b;
+    margin-bottom: 4px;
+}
+
+/* input row */
+.chat-input-row {
+    display: flex;
+    gap: 8px;
+    padding: 10px;
+    border-top: 1px solid #e6edf3;
+    background: #fff;
+}
+
+.chat-input {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    outline: none;
+}
+
+.chat-send {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #2563eb;
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+/* collapsed chat */
+.chat-panel.collapsed .chat-messages,
+.chat-panel.collapsed .chat-input-row {
+    display: none;
+}
+
+/* ensure wrappers are hidden until needed to avoid showing empty black boxes */
+.video-wrapper.hidden {
+    display: none;
+    background: transparent;
+}
+
+@media (max-width: 900px) {
+    .app-grid {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .chat-panel {
+        width: calc(100% - 40px);
+        max-height: 360px;
+    }
+
+    .video-wrapper {
+        width: calc(100% - 40px);
+        height: 220px;
     }
 }

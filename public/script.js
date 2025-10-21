@@ -19,6 +19,27 @@ const copyUrlBtn = document.getElementById("copyUrlBtn");
 const statusEl = document.getElementById("status");
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
+const displayNameInput = document.getElementById("displayName");
+
+// changed code: chat elements
+const chatPanel = document.getElementById("chatPanel");
+const chatMessages = document.getElementById("chatMessages");
+const chatInput = document.getElementById("chatInput");
+const chatSendBtn = document.getElementById("chatSendBtn");
+const chatToggle = document.getElementById("chatToggle");
+
+const MAX_CHAT_LENGTH = 500; // client-side mirror of server limit
+
+// hide chat UI until a successful socket join/connection is established
+if (chatPanel) {
+    chatPanel.style.display = "none";
+}
+if (chatInput) {
+    chatInput.disabled = true;
+}
+if (chatSendBtn) {
+    chatSendBtn.disabled = true;
+}
 
 createBtn.onclick = async () => {
     roomId = document.getElementById("roomId").value.trim();
@@ -92,14 +113,18 @@ startCameraBtn.onclick = async () => {
 };
 
 async function startCamera() {
-	try {
-		localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-		localVideo.srcObject = localStream;
-		localVideo.style.display = "block";
-		startCameraBtn.style.display = "none";
-	} catch (err) {
-		alert("Failed to access camera: " + err.message);
-	}
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localVideo.srcObject = localStream;
+        localVideo.style.display = "block";
+        // ensure the wrapper is shown only when we actually have a local stream
+        if (localVideo.parentElement && localVideo.parentElement.classList.contains("hidden")) {
+            localVideo.parentElement.classList.remove("hidden");
+        }
+        startCameraBtn.style.display = "none";
+    } catch (err) {
+        alert("Failed to access camera: " + err.message);
+    }
 }
 
 function connectToRoom(roomId, password) {
@@ -124,16 +149,25 @@ function connectToRoom(roomId, password) {
     });
 
     socket.on("connect", () => {
+        // include display name when joining
+        const displayName = (displayNameInput && displayNameInput.value) ? displayNameInput.value.trim() : "";
+
         // use ack from server to decide when to update UI and clear previous errors
-        socket.emit("join", { roomId, password }, (res) => {
+        socket.emit("join", { roomId, password, displayName }, (res) => {
             if (res && res.ok) {
                 // success: update UI and clear stale status
                 createBtn.style.display = "none";
                 joinBtn.style.display = "none";
                 document.getElementById("roomId").disabled = true;
                 document.getElementById("password").disabled = true;
+                if (displayNameInput) displayNameInput.disabled = true;
                 statusEl.textContent = "";
                 authFailed = false;
+
+                // show and enable chat now that we're connected to the room
+                if (chatPanel) chatPanel.style.display = "";
+                if (chatInput) chatInput.disabled = false;
+                if (chatSendBtn) chatSendBtn.disabled = false;
             } else {
                 // failed: show server message (could be rate-limit or invalid password)
                 statusEl.textContent = "Error: " + (res?.error || "Join failed");
@@ -168,6 +202,10 @@ function setupConnection() {
 	pc.ontrack = (event) => {
 		remoteVideo.srcObject = event.streams[0];
 		remoteVideo.style.display = "block";
+		// show remote wrapper only when a remote track arrives
+		if (remoteVideo.parentElement && remoteVideo.parentElement.classList.contains("hidden")) {
+			remoteVideo.parentElement.classList.remove("hidden");
+		}
 	};
 
 	if (localStream) {
@@ -213,6 +251,12 @@ function setupSocketHandlers() {
         }
         // cleanup and reset
         cleanupAndResetUI();
+    });
+
+    // changed code: receive chat messages
+    socket.on("chat", (payload) => {
+        // payload: { from, message, time }
+        appendChatMessage(payload);
     });
 
 	socket.on("peer-joined", async (peerId) => {
@@ -292,27 +336,129 @@ function handleHostDisconnected() {
     }, 10000);
 }
 
+// changed code: decode HTML entities before rendering so server-escaped entities (eg. &#39;) appear correctly
+function decodeHtmlEntities(str) {
+    if (!str) return "";
+    const div = document.createElement("div");
+    // innerHTML will decode entities like &#39; &amp; etc. — message has been sanitized server-side already
+    div.innerHTML = str;
+    return div.textContent;
+}
+
+// changed append to show display name (decoded) and fallback to short id
+function appendChatMessage({ from, name, message, time } = {}) {
+    if (!chatMessages) return;
+    const item = document.createElement("div");
+    item.className = "chat-message";
+
+    const meta = document.createElement("div");
+    meta.className = "chat-meta";
+    const t = time ? new Date(time) : new Date();
+    const ts = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const who = (name && name.length) ? decodeHtmlEntities(name) : (from ? from.slice(0, 8) : "unknown");
+    meta.textContent = `${ts} • ${who}`;
+
+    const text = document.createElement("div");
+    // decode server-sent HTML entities (server sanitizes with HTML escapes)
+    const decoded = decodeHtmlEntities(message || "");
+    // use textContent to avoid interpreting HTML (we decoded entities safely)
+    text.textContent = decoded;
+
+    item.appendChild(meta);
+    item.appendChild(text);
+    chatMessages.appendChild(item);
+    // scroll to bottom smoothly
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// send message (with client-side trimming/limit)
+function sendChatMessage() {
+    if (!socket || socket.disconnected) return;
+    const raw = (chatInput.value || "").trim();
+    if (!raw) return;
+    const msg = raw.slice(0, MAX_CHAT_LENGTH);
+    socket.emit("chat", { roomId, message: msg }, (res) => {
+        if (res && res.ok) {
+            // optional: mark as sent, server will re-emit to room so sender sees message too
+            chatInput.value = "";
+        } else {
+            const err = res?.error || "Failed to send";
+            // show local error message
+            appendChatMessage({ name: "System", message: err, time: Date.now() });
+        }
+    });
+}
+
+if (chatSendBtn) {
+    chatSendBtn.addEventListener("click", sendChatMessage);
+}
+
+if (chatInput) {
+    chatInput.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" && !ev.shiftKey) {
+            ev.preventDefault();
+            sendChatMessage();
+        }
+    });
+}
+
+if (chatToggle) {
+    chatToggle.addEventListener("click", () => {
+        if (!chatPanel) return;
+        chatPanel.classList.toggle("collapsed");
+        chatToggle.textContent = chatPanel.classList.contains("collapsed") ? "+" : "─";
+    });
+}
+
+// ensure chat UI is cleared/reset on cleanup
 function cleanupAndResetUI() {
-	if (reconnectInterval) {
-		clearInterval(reconnectInterval);
-		reconnectInterval = null;
-	}
-	if (socket) {
-		socket.disconnect();
-		socket = null;
-	}
-	Object.values(peerConnections).forEach(pc => pc.close());
-	for (const k in peerConnections) delete peerConnections[k];
-	localVideo.srcObject = null;
-	remoteVideo.srcObject = null;
-	localVideo.style.display = "none";
-	remoteVideo.style.display = "none";
-	startCameraBtn.style.display = "none";
-	copyUrlBtn.style.display = "none";
-	createBtn.style.display = "block";
-	joinBtn.style.display = "block";
-	document.getElementById("roomId").disabled = false;
-	document.getElementById("password").disabled = false;
+    if (reconnectInterval) {
+        clearInterval(reconnectInterval);
+        reconnectInterval = null;
+    }
+    if (socket) {
+        socket.disconnect();
+        socket = null;
+    }
+    Object.values(peerConnections).forEach(pc => pc.close());
+    for (const k in peerConnections) delete peerConnections[k];
+
+    // hide video elements and their wrappers again
+    if (localVideo) {
+        localVideo.srcObject = null;
+        localVideo.style.display = "none";
+        if (localVideo.parentElement && !localVideo.parentElement.classList.contains("hidden")) {
+            localVideo.parentElement.classList.add("hidden");
+        }
+    }
+    if (remoteVideo) {
+        remoteVideo.srcObject = null;
+        remoteVideo.style.display = "none";
+        if (remoteVideo.parentElement && !remoteVideo.parentElement.classList.contains("hidden")) {
+            remoteVideo.parentElement.classList.add("hidden");
+        }
+    }
+
+    startCameraBtn.style.display = "none";
+    copyUrlBtn.style.display = "none";
+    createBtn.style.display = "block";
+    joinBtn.style.display = "block";
+    document.getElementById("roomId").disabled = false;
+    document.getElementById("password").disabled = false;
+    if (displayNameInput) displayNameInput.disabled = false;
+
+    // changed code: reset chat and hide it until next successful join
+    if (chatMessages) chatMessages.innerHTML = "";
+    if (chatInput) {
+        chatInput.value = "";
+        chatInput.disabled = true;
+    }
+    if (chatSendBtn) chatSendBtn.disabled = true;
+    if (chatPanel) {
+        chatPanel.classList.remove("collapsed");
+        chatPanel.style.display = "none";
+    }
 }
 
 function enableFullscreenOnClick(videoElement) {
@@ -327,7 +473,13 @@ enableFullscreenOnClick(localVideo);
 enableFullscreenOnClick(remoteVideo);
 
 window.addEventListener("DOMContentLoaded", () => {
-	const params = new URLSearchParams(window.location.search);
-	const prefillRoom = params.get("room");
-	if (prefillRoom) document.getElementById("roomId").value = prefillRoom;
+    const params = new URLSearchParams(window.location.search);
+    const prefillRoom = params.get("room");
+    if (prefillRoom) document.getElementById("roomId").value = prefillRoom;
+
+    // defensive: ensure wrappers are hidden on load if HTML didn't include classes
+    const wrappers = document.querySelectorAll(".video-wrapper");
+    wrappers.forEach(w => {
+        if (!w.classList.contains("hidden")) w.classList.add("hidden");
+    });
 });

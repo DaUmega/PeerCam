@@ -18,6 +18,11 @@
             <input type="password" id="password" placeholder="Enter password">
         </label>
 
+        <label>
+            Display name:
+            <input type="text" id="displayName" placeholder="Optional: your display name (max 32 chars)">
+        </label>
+
         <button id="createBtn">Create Room</button>
         <button id="joinBtn">Join Room</button>
         <button id="startCameraBtn" style="display:none;">Start Camera</button>
@@ -26,13 +31,29 @@
         <div id="status">Idle</div>
     </div>
 
-    <div class="video-container">
-        <div class="video-wrapper">
-            <video id="localVideo" autoplay muted playsinline></video>
+    <div class="app-grid">
+        <div class="video-container">
+            <div class="video-wrapper hidden">
+                 <video id="localVideo" autoplay muted playsinline></video>
+             </div>
+            <div class="video-wrapper hidden">
+                 <video id="remoteVideo" autoplay playsinline></video>
+             </div>
         </div>
-        <div class="video-wrapper">
-            <video id="remoteVideo" autoplay playsinline></video>
-        </div>
+
+        <aside id="chatPanel" class="chat-panel" aria-live="polite">
+            <div class="chat-header">
+                <div class="chat-title">Chat Room</div>
+                <button id="chatToggle" class="chat-toggle" aria-label="Toggle chat">─</button>
+            </div>
+
+            <div id="chatMessages" class="chat-messages" role="log"></div>
+
+            <div class="chat-input-row">
+                <input id="chatInput" class="chat-input" type="text" placeholder="Type a message and press Enter" maxlength="500" />
+                <button id="chatSendBtn" class="chat-send">Send</button>
+            </div>
+        </aside>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
