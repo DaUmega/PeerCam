@@ -1,6 +1,6 @@
 # PeerLive
 
-PeerLive is a **peer-to-peer, encrypted camera web app** that allows users to set up a webcam as a live-streaming camera, now with **real-time chat and customizable display names**. Stream and communicate securely without storing any video or chat data on a server, ensuring privacy and direct peer-to-peer interaction.
+PeerLive is a **peer-to-peer, encrypted camera web app** that allows users to set up a webcam as a live-streaming camera, with **real-time chat and customizable display names**. Stream and communicate securely without storing any video or chat data on a server, ensuring privacy and direct peer-to-peer interaction.
 
 ---
 
