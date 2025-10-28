@@ -86,13 +86,11 @@ button:hover {
 }
 
 .video-wrapper {
-    /* allow the wrapper to size to available width and let the video keep its natural aspect */
     background: #000;
     border-radius: 8px;
     overflow: hidden;
     width: 100%;
     max-width: 560px;
-    /* remove fixed height so portrait streams aren't forced into landscape */
     height: auto;
     display: flex;
     align-items: center;
@@ -172,29 +170,43 @@ button:hover {
 
 .chat-input-row {
     display: flex;
+    align-items: center;
+    justify-content: space-between;
     gap: 8px;
     padding: 10px;
     border-top: 1px solid #e6edf3;
     background: #fff;
+    flex-shrink: 0;
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
 }
 
 .chat-input {
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 0;
     padding: 10px;
     border: 1px solid #cbd5e1;
     border-radius: 8px;
     font-size: 0.95rem;
     outline: none;
+    box-sizing: border-box;
 }
 
 .chat-send {
-    padding: 10px 12px;
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding: 10px;
     border-radius: 8px;
     background: #2563eb;
     color: white;
     border: none;
     cursor: pointer;
     font-weight: 700;
+    max-width: 120px;
+    box-sizing: border-box;
 }
 
 .chat-panel.collapsed .chat-messages,
@@ -247,10 +259,6 @@ body.stream-active {
 }
 
 @media (max-width: 1080px) {
-    html {
-        font-size: 2.5rem;
-    }
-    
     .app-grid {
         flex-direction: column;
         align-items: center;
