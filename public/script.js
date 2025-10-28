@@ -114,6 +114,7 @@ joinBtn.onclick = () => {
 
 startCameraBtn.onclick = async () => {
     await startCamera();
+    enableStreamMode();
     connectToRoom(roomId, password);
 };
 
@@ -300,6 +301,7 @@ function connectToRoom(roomId, password) {
             if (res && res.ok) {
                 createBtn.style.display = "none";
                 joinBtn.style.display = "none";
+                enableStreamMode();
                 document.getElementById("roomId").disabled = true;
                 document.getElementById("password").disabled = true;
                 if (displayNameInput) displayNameInput.disabled = true;
@@ -648,6 +650,52 @@ function enableFullscreenOnClick(videoElement) {
         else if (videoElement.msRequestFullscreen) videoElement.msRequestFullscreen();
     });
 }
+
+const exitBtn = document.getElementById("exitStreamBtn");
+
+// Function to enable livestream mode
+function enableStreamMode() {
+    document.body.classList.add("stream-active");
+    if (exitBtn) exitBtn.classList.remove("hidden");
+}
+
+// Function to disable livestream mode (refresh after confirm)
+function setupExitButton() {
+    if (!exitBtn) return;
+    exitBtn.addEventListener("click", () => {
+        const overlay = document.createElement("div");
+        overlay.style.position = "fixed";
+        overlay.style.top = "0";
+        overlay.style.left = "0";
+        overlay.style.width = "100%";
+        overlay.style.height = "100%";
+        overlay.style.background = "rgba(0,0,0,0.6)";
+        overlay.style.display = "flex";
+        overlay.style.alignItems = "center";
+        overlay.style.justifyContent = "center";
+        overlay.style.zIndex = "2000";
+
+        const box = document.createElement("div");
+        box.style.background = "#fff";
+        box.style.color = "#111";
+        box.style.padding = "20px 30px";
+        box.style.borderRadius = "10px";
+        box.style.textAlign = "center";
+        box.innerHTML = `
+            <p style="margin-bottom:15px;">Are you sure you want to exit the stream?</p>
+            <button id="confirmExitBtn" style="margin-right:10px; padding:8px 16px; border:none; border-radius:8px; background:#ef4444; color:#fff; cursor:pointer;">Exit</button>
+            <button id="cancelExitBtn" style="padding:8px 16px; border:none; border-radius:8px; background:#94a3b8; color:#fff; cursor:pointer;">Cancel</button>
+        `;
+
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+
+        document.getElementById("confirmExitBtn").onclick = () => location.reload();
+        document.getElementById("cancelExitBtn").onclick = () => overlay.remove();
+    });
+}
+
+setupExitButton();
 
 enableFullscreenOnClick(localVideo);
 enableFullscreenOnClick(remoteVideo);

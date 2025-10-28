@@ -14,7 +14,7 @@ h1 {
 
 #controls {
     margin: 20px auto;
-    max-width: 400px;
+    max-width: 800px;
 }
 
 #controls label {
@@ -207,62 +207,76 @@ button:hover {
     background: transparent;
 }
 
-@media (max-width: 900px) {
-    .app-grid {
-        flex-direction: column;
-        align-items: center;
-    }
+.exit-btn {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background: rgba(239, 68, 68, 0.9);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    z-index: 1500;
+    opacity: 0.85;
+    transition: opacity 0.2s ease, background 0.2s ease;
+    width: auto;
+    max-width: 120px;
+    white-space: nowrap;
+    display: inline-block;
+    text-align: center;
+}
+.exit-btn:hover {
+    opacity: 1;
+    background: rgba(220, 38, 38, 1);
+}
+.exit-btn.hidden {
+    display: none;
+}
 
-    .chat-panel {
-        width: calc(100% - 40px);
-        max-height: 360px;
-    }
+body.stream-active #controls,
+body.stream-active h1 {
+    display: none !important;
+}
 
-    .video-wrapper {
-        /* use available width on small screens, don't force 16:9 */
-        width: calc(100% - 40px);
-        height: auto;
-        max-width: none;
-    }
-
-    /* avoid crop on small screens */
-    .video-wrapper video {
-        width: 100%;
-        height: auto;
-        max-height: 70vh;
-        object-fit: contain;
-    }
+body.stream-active {
+    background: #000;
+    color: white;
 }
 
 @media (max-width: 1080px) {
+    html {
+        font-size: 2.5rem;
+    }
+    
     .app-grid {
         flex-direction: column;
         align-items: center;
-        gap: 8px; /* reduced gap for tighter stacking on phones */
+        gap: 8px;
     }
 
-    /* prevent .video-container from shrinking to half height */
     .video-container {
-        margin-top: 8px; /* reduce top spacing */
+        margin-top: 8px;
         gap: 8px;
         width: 100%;
-        flex: 0 0 auto; /* don't allow it to flex down on small screens */
+        flex: 0 0 auto;
     }
 
     .chat-panel {
         width: calc(100% - 24px);
         max-height: 360px;
-        margin: 0; /* remove extra margin so it sits close to video */
+        margin: 0;
     }
 
     .video-wrapper {
         width: calc(100% - 24px);
-        height: auto; /* let the video determine height based on its aspect */
+        height: auto;
         max-width: none;
-        margin: 0; /* remove extra spacing */
+        margin: 0;
     }
 
-    /* avoid cropping the video on phones */
     .video-wrapper video {
         width: 100%;
         height: auto;
