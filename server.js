@@ -11,7 +11,6 @@ const io = new Server(server);
 
 // In-memory store for rooms
 const rooms = {};
-const ROOM_TTL = 1000 * 60 * 30; // 30 min auto cleanup
 const MAX_CONNECTIONS_PER_IP = 5; // Prevent DDoS: max clients per IP per room
 const SALT_ROUNDS = 10; // bcrypt cost factor
 
@@ -110,13 +109,11 @@ app.post("/create/:roomId", createLimiter, async (req, res) => {
 
         // check whether any of the recorded client socket ids are still connected
         const hasActive = Array.from(existing.clients.keys()).some(socketId => {
-            // io.sockets.sockets is a Map in Socket.IO v3/v4
             return Boolean(io.sockets.sockets.get && io.sockets.sockets.get(socketId));
         });
 
         if (existing.clients && existing.clients.size === 0 || !hasActive) {
             // stale / empty room: remove it and allow new creation
-            clearTimeout(existing.timeout);
             delete rooms[roomId];
             // fall through to create new room
         } else {
@@ -130,10 +127,7 @@ app.post("/create/:roomId", createLimiter, async (req, res) => {
             passwordHash,
             clients: new Map(), // socketId -> IP
             names: new Map(),   // socketId -> displayName
-            createdAt: Date.now(),
-            timeout: setTimeout(() => {
-                cleanupRoom(roomId);
-            }, ROOM_TTL)
+            createdAt: Date.now()
         };
         return res.json({ success: true, roomId });
     } catch (err) {
@@ -145,11 +139,22 @@ app.post("/create/:roomId", createLimiter, async (req, res) => {
 // Cleanup helper
 function cleanupRoom(roomId) {
 	if (rooms[roomId]) {
-		clearTimeout(rooms[roomId].timeout);
 		delete rooms[roomId];
 		console.log(`Room ${roomId} cleaned up`);
 	}
 }
+
+// Periodic reaper to clean up old empty rooms (with no active socket connections)
+setInterval(() => {
+    for (const [roomId, room] of Object.entries(rooms)) {
+        const hasActive = Array.from(room.clients.keys()).some(socketId =>
+            io.sockets.sockets.get && io.sockets.sockets.get(socketId)
+        );
+        if (!hasActive) {
+            cleanupRoom(roomId);
+        }
+    }
+}, 5 * 60 * 1000); // runs every 5 minutes
 
 // Socket.IO handling
 io.on("connection", (socket) => {
@@ -218,12 +223,6 @@ io.on("connection", (socket) => {
 
         socket.join(roomId);
         socket.to(roomId).emit("peer-joined", socket.id);
-
-        // Refresh cleanup timer
-        clearTimeout(room.timeout);
-        room.timeout = setTimeout(() => {
-            cleanupRoom(roomId);
-        }, ROOM_TTL);
 
         if (ack) ack({ ok: true, roomId });
     });
